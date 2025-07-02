@@ -13,3 +13,4 @@ ts-sdk/
 go-sdk/
 tscode/dist
 tscode/bitseal-*.tgz
+examples/ts_demo/node_modules
