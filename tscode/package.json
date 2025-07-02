@@ -1,0 +1,30 @@
+{
+  "name": "bitseal",
+  "version": "0.1.0",
+  "description": "BitSeal Protocol TypeScript SDK (BitSeal-RTC & BitSeal-Web)",
+  "author": "BitSeal Contributors",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format esm,cjs --minify",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@bsv/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^7.3.0",
+    "typescript": "^5.4.0",
+    "rimraf": "^5.0.0",
+    "vitest": "^1.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
