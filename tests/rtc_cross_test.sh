@@ -11,7 +11,7 @@ GREEN="\033[0;32m"
 NC="\033[0m"
 
 echo -e "${GREEN}Step 0: Go unit tests …${NC}"
-go test ./gocode/bitseal_rtc -v
+(cd gocode && go test ./bitseal_rtc -v)
 
 echo -e "${GREEN}Step 0b: TS unit tests …${NC}"
 bun test tscode/bitseal_rtc

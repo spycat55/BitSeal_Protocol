@@ -1,0 +1,8 @@
+github.com/bsv-blockchain/go-sdk v1.2.4 h1:Vl+u/PoBl3+wtQF7CoRTLhBCqIs+MqHgB/xj76+rKHI=
+github.com/bsv-blockchain/go-sdk v1.2.4/go.mod h1:Sb665obrV1FUpM6mRb7fOYNgoOFdQw2+9hag6ApuNQk=
+github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+github.com/spycat55/BitSeal_Protocol/gocode v0.1.0 h1:8qjTG2z7bGhU3dJLHnQzokAWaYH9fWwtyAtbJBG0y7E=
+github.com/spycat55/BitSeal_Protocol/gocode v0.1.0/go.mod h1:TuJLl5SF8qS12GGF6Pa4SsbptOBbM+Ukm1s6WCxbylM=
+golang.org/x/crypto v0.39.0 h1:SHs+kF4LP+f+p14esP5jAoDpHU8Gu/v9lFRK6IT5imM=
+golang.org/x/crypto v0.39.0/go.mod h1:L+Xg3Wf6HoL4Bn4238Z6ft6KfEpN0tJGo53AAPC632U=

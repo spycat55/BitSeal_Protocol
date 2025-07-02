@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	bitseal "bitseal/gocode/bitseal_web"
+	bitseal "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_web"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 )

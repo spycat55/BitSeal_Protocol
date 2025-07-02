@@ -7,6 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/bsv-blockchain/go-sdk v1.2.4
 	github.com/pion/webrtc/v3 v3.2.39
+	github.com/spycat55/BitSeal_Protocol/gocode v0.1.0
 )
 
 require (
@@ -35,3 +36,5 @@ require (
 	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/spycat55/BitSeal_Protocol/gocode => ./gocode

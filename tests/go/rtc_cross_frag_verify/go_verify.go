@@ -11,7 +11,7 @@ import (
 	mrand "math/rand"
 	"strings"
 
-	rtc "bitseal/gocode/bitseal_rtc"
+	rtc "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_rtc"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 )
