@@ -1,0 +1,20 @@
+{
+  "name": "bitseal",
+  "private": true,
+  "workspaces": [
+    "tscode"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "npm run build -ws",
+    "test": "npm run test -ws && npm run test:cross",
+    "lint": "npm run lint -ws",
+    "test:go": "go test ./gocode/...",
+    "test:ts": "npm test -ws",
+    "test:cross": "bash cross_test.sh",
+    "cli": "echo \"BitSeal CLI placeholder – TODO\"",
+    "ci": "npm run test && npm run test:go"
+  }
+}
