@@ -6,6 +6,7 @@ toolchain go1.24.4
 
 require (
 	github.com/bsv-blockchain/go-sdk v1.2.4
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/pion/webrtc/v3 v3.2.39
 	github.com/spycat55/BitSeal_Protocol/gocode v0.1.0
 )
