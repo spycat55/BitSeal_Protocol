@@ -31,12 +31,20 @@ BitSeal-RTC 将安全逻辑拆为两层：
    digest = SHA256(canonical(handshake_msg))   // canonical = 字段按 proto→pk→salt→ts 排序，且无空格
    sig    = SignedMessage.sign(digest, SK_self, PK_peer)
    ```
-3. Exchange `{handshake_msg, sig}`; after validating the peer’s signature:
-   ```
+3. Exchange `{handshake_msg, sig}`; after validating the peer's signature:
+   ```text
    shared_secret = ECDH(SK_self, PK_peer)
-   key_session   = HKDF(shared_secret, salt_A || salt_B)
-   salt_session  = salt_A || salt_B      // 4B 发向 → 4B 收向
-   seq_init      = random 64-bit         // 各方向独立
+
+   // IMPORTANT: sort the two 4-byte salts **lexicographically (byte-wise)**
+   // before concatenation, so both peers feed HKDF with identical input.
+   // e.g. 0x01 02 03 04 < 0x05 06 07 08 ⇒ salt_lo = salt_A, salt_hi = salt_B
+   key_session   = HKDF(shared_secret, salt_lo || salt_hi)
+
+   // Per-direction nonces use each side's own salt:
+   salt_send     = salt_self    // 4B → outbound frames
+   salt_recv     = salt_peer    // 4B → decrypt inbound frames
+
+   seq_init      = random 64-bit   // 独立于方向
    ```
 4. Handshake completes – switch to **BST2**.
 
@@ -89,7 +97,7 @@ bitmap      = 0
 
 ### 3.6 Application-level fragmentation (Profile L, up to 64 MiB)
 
-If a single plaintext exceeds ≈60 KiB, SCTP’s `MaxMessageSize` and browser buffers become bottlenecks.
+If a single plaintext exceeds ≈60 KiB, SCTP's `MaxMessageSize` and browser buffers become bottlenecks.
 BST2 specifies an optional **application-layer fragmentation** on top of the record layer, with a default "L" profile:
 
 | Parameter | Value | Description |
@@ -114,7 +122,7 @@ The current Go / TypeScript implementations call `AEAD_Encrypt` per fragment at 
 2. 接收端收到任意片即可先走 3.5 的重放窗口，再立即解密与验证 Tag，及时丢弃伪造数据。  
 3. 解密成功的片缓存于 `{msgID, fragID}` 表；当 `received == total` 时按序拼接得到完整明文。  
 
-Although per-fragment tags cost ≈0.10 % extra bandwidth they greatly simplify implementation and improve loss resilience, therefore they are **recommended and default** for Profile L. A future higher profile (e.g. “L+”) may move the tag to the last fragment for extreme bandwidth savings.
+Although per-fragment tags cost ≈0.10 % extra bandwidth they greatly simplify implementation and improve loss resilience, therefore they are **recommended and default** for Profile L. A future higher profile (e.g. "L+") may move the tag to the last fragment for extreme bandwidth savings.
 
 > Profile L already covers 99 % of file/image transfers. For larger messages increase `FRAG_SIZE` to 32 KiB or relax `MAX_FRAGS` (the 8-B header scales up to ≈1 GiB).
 

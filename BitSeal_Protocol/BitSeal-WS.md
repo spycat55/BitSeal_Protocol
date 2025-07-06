@@ -63,11 +63,18 @@ Digest 构造：沿用 BitSeal-WEB 六行 Canonical String，但 *Body* 为上�
 Server 同样以 BitSeal-WEB 方式在 `X-BKSA-Sig` 中附带签名。
 
 ### 4.3 会话密钥派生
-```
+```text
 shared_secret = ECDH(SK_self, PK_peer)
-key_session   = HKDF(shared_secret, salt || salt_s)
-salt_session  = salt || salt_s    // 4B (client→srv) + 4B (srv→client)
-seq_init      = random 64-bit     // 各方向独立
+
+// 首先对两端 4B 盐进行 **字典序 (lexicographic)** 排序，确保输入一致
+salt_lo, salt_hi = sort(salt, salt_s)   // byte-wise compare
+key_session = HKDF(shared_secret, salt_lo || salt_hi)
+
+// Nonce 每个方向使用本端生成的 4B 盐
+salt_send = salt_self   // outbound → seq
+salt_recv = salt_peer   // inbound  ← seq
+
+seq_init  = random 64-bit         // 各方向独立
 ```
 
 ### 4.4 JWT 令牌格式
