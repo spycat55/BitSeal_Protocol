@@ -1,21 +1,45 @@
-// @ts-nocheck
 import PrivateKey from '@bsv/sdk/primitives/PrivateKey'
-import PublicKey from '@bsv/sdk/primitives/PublicKey'
-import { connectBitSealWS } from '../../../tscode/bitseal_ws/BitSealWS.ts'
+import { connectBitSealWS, WebSocketLike } from '../../../tscode/bitseal_ws/BitSealWS.ts'
 
-function fixedPriv(b:number){return new PrivateKey(Array(31).fill(0).concat([b]))}
+function fixedPriv(b: number): PrivateKey {
+  return new PrivateKey(Array(31).fill(0).concat([b]))
+}
 
-(async()=>{
-  const clientPriv=fixedPriv(0x33)
-  const serverPub=fixedPriv(0x55).toPublicKey()
+(async () => {
+  const clientPriv = fixedPriv(0x33)
+  const serverPub = fixedPriv(0x55).toPublicKey()
 
-  const {ws,session}=await connectBitSealWS(clientPriv,serverPub,'ws://localhost:8080/ws/socket')
-  console.log('connected, sending hello')
-  const payload=new TextEncoder().encode('hello BitSeal-WS')
-  ws.send(Buffer.from(session.encode(payload)))
-  ws.onmessage=(ev:any)=>{
-    const plain=session.decode(new Uint8Array(ev.data))
-    console.log('echo:',new TextDecoder().decode(plain))
-    ws.close()
+  let resolveDone!: () => void
+  const done = new Promise<void>((r) => { resolveDone = r })
+
+  console.log('script start')
+
+  try {
+    const { ws, send } = await connectBitSealWS(clientPriv, serverPub, 'ws://localhost:8080/ws/socket', {
+      WebSocketImpl: WebSocket as unknown as any,
+      onMessage: (plain: Uint8Array, _sess, _ws: WebSocketLike) => {
+        console.log('got reply:', new TextDecoder().decode(plain))
+        _ws.close()
+        resolveDone()
+        return null // 不再回复
+      }
+    })
+
+    console.log('connected, ws.readyState =', (ws as any).readyState, 'sending hello via send()')
+
+    ;(ws as any).onopen = () => console.log('[debug] ws onopen')
+    ;(ws as any).onerror = (e: any) => console.log('[debug] ws onerror', e)
+    ;(ws as any).onclose = (e: any) => console.log('[debug] ws onclose', e.code, e.reason)
+
+    send('hello BitSeal-WS')
+
+    console.log('after send, awaiting reply …')
+
+    // wait until reply received
+    await done
+
+    console.log('script end')
+  } catch (err) {
+    console.error('connectBitSealWS failed', err)
   }
 })(); 

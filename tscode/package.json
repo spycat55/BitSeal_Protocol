@@ -1,6 +1,6 @@
 {
   "name": "bitseal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "BitSeal Protocol TypeScript SDK (BitSeal-RTC & BitSeal-Web)",
   "author": "BitSeal Contributors",
   "license": "MIT",
@@ -21,9 +21,10 @@
     "jose": "^5.2.0"
   },
   "devDependencies": {
+    "rimraf": "^5.0.0",
+    "ts-node": "^10.9.2",
     "tsup": "^7.3.0",
     "typescript": "^5.4.0",
-    "rimraf": "^5.0.0",
     "vitest": "^1.5.0"
   },
   "engines": {

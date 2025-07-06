@@ -25,6 +25,10 @@ import (
 type BitSealWSConn struct {
 	Conn    *websocket.Conn
 	Session *rtc.Session
+
+	// OnMessage 若非 nil，则 Serve/ServeAsync 解包明文后调用；
+	// 返回值非 nil ⇒ 自动 Encode + 发送；
+	OnMessage func(sess *rtc.Session, plain []byte) ([]byte, error)
 }
 
 // Write 加密并发送明文数据。
@@ -61,6 +65,32 @@ func (c *BitSealWSConn) Close() error {
 		return nil
 	}
 	return c.Conn.Close()
+}
+
+// Serve 在当前 goroutine 中持续读取并分发消息，直到 Read 返回错误或连接关闭。
+// 若设置了 OnMessage，则自动调用并根据返回值决定是否回复。
+func (c *BitSealWSConn) Serve() {
+	for {
+		plain, err := c.Read()
+		if err != nil {
+			_ = c.Close()
+			return
+		}
+		if c.OnMessage != nil {
+			resp, err := c.OnMessage(c.Session, plain)
+			if err != nil {
+				continue // 忽略单条错误
+			}
+			if resp != nil {
+				_ = c.Write(resp)
+			}
+		}
+	}
+}
+
+// ServeAsync 在新 goroutine 中调用 Serve。
+func (c *BitSealWSConn) ServeAsync() {
+	go c.Serve()
 }
 
 // ConnectBitSealWS 完成客户端两步握手并建立 BST2 会话，返回包装后的连接。

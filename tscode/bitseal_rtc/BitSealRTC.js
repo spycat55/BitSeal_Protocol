@@ -47,9 +47,10 @@ const deriveKey = (shared, saltA, saltB) => {
 }
 
 export class Session {
-  constructor (key, salt) {
+  constructor (key, saltSend, saltRecv) {
     this.key = key
-    this.salt = salt
+    this.saltSend = saltSend  // 用于本端发送
+    this.saltRecv = saltRecv  // 用于解密对端数据
     this.seq = 0n
     this.windowSize = 64n
     this.maxSeq = 0n
@@ -58,11 +59,15 @@ export class Session {
 
   static create (selfPriv, peerPub, saltSelf, saltPeer) {
     const shared = selfPriv.deriveSharedSecret(peerPub).encode(true)
+    console.log('[derive] saltA', Buffer.from(saltSelf).toString('hex'),
+                'saltB', Buffer.from(saltPeer).toString('hex'),
+                'shared', Buffer.from(shared).subarray(0, 16).toString('hex'))
     const key = deriveKey(shared, saltSelf, saltPeer)
-    const sess = new Session(key, saltSelf)
+    console.log('[derive] key', Buffer.from(key).subarray(0, 16).toString('hex'))
     const rand = randomBytes(8)
     let init = 0n
     for (const b of rand) init = (init << 8n) + BigInt(b)
+    const sess = new Session(key, saltSelf, saltPeer)
     sess.seq = init
     return sess
   }
@@ -70,7 +75,7 @@ export class Session {
   encode (plaintext, flags = 0) {
     this.seq += 1n
     const seqBytes = bigIntToBytes(this.seq, 8)
-    const nonce = [...this.salt, ...seqBytes]
+    const nonce = [...this.saltSend, ...seqBytes]
     const ad = [flags, ...seqBytes]
     const { result: cipher, authenticationTag: tag } = AESGCM(plaintext, ad, nonce, this.key)
     const len = 1 + 8 + cipher.length + TAG_SIZE
@@ -85,13 +90,32 @@ export class Session {
     const seq = bytesToBigInt(frame.slice(5, 13))
     if (!this.accept(seq)) throw new Error('replay')
     const cipher = frame.slice(13, frame.length - TAG_SIZE)
-    const tag = frame.slice(frame.length - TAG_SIZE)
+    const tag    = frame.slice(frame.length - TAG_SIZE)
     const seqBytes = frame.slice(5, 13)
-    const nonce = [...this.salt, ...seqBytes]
+    const nonce = [...this.saltRecv, ...seqBytes]
     const ad = [flags, ...seqBytes]
-    const plain = AESGCMDecrypt(cipher, ad, nonce, tag, this.key)
+    // DEBUG
+    console.log('[rtc.decode] saltRecv', Buffer.from(this.saltRecv).toString('hex'), 'seq', Buffer.from(seqBytes).toString('hex'))
+    console.log('[rtc.decode] ad', Buffer.from(ad).toString('hex'))
+    let plain
+    if (AESGCMDecrypt.length === 4) {
+      // library expects cipher||tag combined (array)
+      const combo = new Uint8Array(cipher.length + TAG_SIZE)
+      combo.set(cipher)
+      combo.set(tag, cipher.length)
+      plain = AESGCMDecrypt(Array.from(combo), ad, nonce, Array.from(this.key))
+    } else {
+      // 5-param signature (cipher, ad, nonce, tag, key) – all params should be array<number>
+      plain = AESGCMDecrypt(
+        Array.from(cipher),
+        ad,
+        nonce,
+        Array.from(tag),
+        Array.from(this.key)
+      )
+    }
     if (plain == null) throw new Error('decrypt fail')
-    return plain
+    return plain instanceof Uint8Array ? plain : Uint8Array.from(plain)
   }
 
   accept (seq) {

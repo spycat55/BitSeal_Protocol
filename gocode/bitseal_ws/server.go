@@ -35,6 +35,11 @@ type Server struct {
 	mux     *http.ServeMux
 	pending map[string]*handshakeState // keyed by nonce from Step-1
 	mu      sync.Mutex
+
+	// OnMessage 为业务回调；若不为 nil，则在收到每条消息后调用以生成响应明文。
+	// 回调返回的明文会再次加密后发回客户端；若返回 nil 则表示不需要回复。
+	// 若 OnMessage 本身为 nil，则 Server 默认回显收到的明文（兼容旧逻辑）。
+	OnMessage func(sess *rtc.Session, plain []byte) ([]byte, error)
 }
 
 // NewServer creates a new BitSeal-WS server with its own ServeMux.
@@ -107,6 +112,7 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 
 	// Generate 4-byte server salt
 	saltS, _ := randomSalt4()
+	log.Printf("[handshake] serverSalt %s", saltS)
 
 	// Build JWT
 	claims := map[string]any{
@@ -206,6 +212,9 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 
 	log.Printf("[BitSeal-WS] session established with client %x", state.clientPub.Compressed())
 
+	// 强制后续发送使用 BinaryFrame，避免客户端误解为文本
+	ws.PayloadType = websocket.BinaryFrame
+
 	// Simple echo loop: decrypt incoming, print log, then echo back.
 	buf := make([]byte, 1024*64)
 	for {
@@ -220,8 +229,26 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 			continue // skip invalid
 		}
 		log.Printf("[BitSeal-WS] recv: %d bytes plain=%q", len(plain), string(plain))
-		outFrame, _ := sess.EncodeRecord(plain, 0)
-		_ = websocket.Message.Send(ws, outFrame)
+
+		// 根据是否设置了业务回调决定如何处理消息。
+		var respPlain []byte
+		if s.OnMessage != nil {
+			resp, err := s.OnMessage(sess, plain)
+			if err != nil {
+				log.Printf("[BitSeal-WS] OnMessage error: %v", err)
+				continue // 跳过本条消息
+			}
+			respPlain = resp
+		} else {
+			// 默认行为：直接回显收到的明文
+			respPlain = plain
+		}
+
+		if respPlain != nil {
+			outFrame, _ := sess.EncodeRecord(respPlain, 0)
+			log.Printf("[debug] send len=%d first16=%x", len(outFrame), outFrame[:16])
+			_ = websocket.Message.Send(ws, outFrame)
+		}
 	}
 
 	log.Printf("[BitSeal-WS] connection closed")

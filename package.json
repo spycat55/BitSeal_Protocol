@@ -16,5 +16,10 @@
     "test:cross": "bash cross_test.sh",
     "cli": "echo \"BitSeal CLI placeholder – TODO\"",
     "ci": "npm run test && npm run test:go"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }

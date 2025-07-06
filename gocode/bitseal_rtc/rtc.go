@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
-
-	primitives "github.com/bsv-blockchain/go-sdk/primitives/aesgcm"
 
 	"bytes"
 
 	"github.com/bsv-blockchain/go-sdk/message"
+	aesgcm "github.com/bsv-blockchain/go-sdk/primitives/aesgcm"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	crypto "github.com/bsv-blockchain/go-sdk/primitives/hash"
 )
@@ -121,7 +121,11 @@ func NewSession(selfPriv *ec.PrivateKey, peerPub *ec.PublicKey, selfSalt, peerSa
 		return nil, err
 	}
 	sharedBytes := sharedPoint.Compressed()
+	// DEBUG: 打印派生输入
+	log.Printf("[derive] saltA=%x saltB=%x shared=%x", selfSalt, peerSalt, sharedBytes[:16])
 	key := deriveKey(sharedBytes, selfSalt, peerSalt)
+	// DEBUG: 打印派生输出
+	log.Printf("[derive] key=%x", key[:16])
 
 	// no need to init AESGCM cipher here
 
@@ -149,12 +153,12 @@ func (s *Session) EncodeRecord(plaintext []byte, flags byte) ([]byte, error) {
 	binary.BigEndian.PutUint64(seqBytes, s.seq)
 	nonce := append(s.saltSend, seqBytes...)
 	ad := append([]byte{flags}, seqBytes...)
-	cipherTextOnly, tag, err := primitives.AESGCMEncrypt(plaintext, s.key, nonce, ad)
+
+	// Use optimized sdk implementation that returns ciphertext and tag separately.
+	cipherTextOnly, tag, err := aesgcm.AESGCMEncrypt(plaintext, s.key, nonce, ad)
 	if err != nil {
 		return nil, err
 	}
-	// combine later
-	// cipherTextOnly and tag already obtained
 	length := uint32(1 + 8 + uint32(len(cipherTextOnly)) + tagSize)
 
 	buf := make([]byte, 4+1+8+len(cipherTextOnly)+tagSize)
@@ -187,7 +191,8 @@ func (s *Session) DecodeRecord(frame []byte) ([]byte, error) {
 	binary.BigEndian.PutUint64(seqBytes, seq)
 	nonce := append(s.saltRecv, seqBytes...)
 	ad := append([]byte{flags}, seqBytes...)
-	plain, err := primitives.AESGCMDecrypt(cipherTextOnly, s.key, nonce, ad, tag)
+
+	plain, err := aesgcm.AESGCMDecrypt(cipherTextOnly, s.key, nonce, ad, tag)
 	if err != nil {
 		return nil, err
 	}

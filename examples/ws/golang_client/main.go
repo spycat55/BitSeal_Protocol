@@ -5,6 +5,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	rtc "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_rtc"
 	ws "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_ws"
 )
 
@@ -26,18 +27,19 @@ func main() {
 	defer conn.Close()
 	log.Println("[client] connected to BitSeal-WS server")
 
+	// 注册 OnMessage 回调，收到服务器消息时触发
+	conn.OnMessage = func(_ *rtc.Session, plain []byte) ([]byte, error) {
+		log.Printf("[client onMessage] recv: %q", string(plain))
+		return nil, nil // 不再回复
+	}
+	conn.ServeAsync() // 开启后台读取循环
+
 	msg := []byte("hello BitSeal-WS from Go client")
 	if err := conn.Write(msg); err != nil {
 		log.Fatal("write error:", err)
 	}
-	log.Printf("[client] send: %q\n", msg)
+	log.Printf("[client] send: %q", msg)
 
-	echo, err := conn.Read()
-	if err != nil {
-		log.Fatal("read error:", err)
-	}
-	log.Printf("[client] recv: %q\n", echo)
-
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	log.Println("[client] done, closing")
 }

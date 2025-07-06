@@ -73,6 +73,21 @@ export function sessionFromJwt (
   return sess
 }
 
+// --- Internal light-weight WebSocket interface（最小依赖 send/close/on*） ------------------------
+export interface WebSocketLike {
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void
+  close(code?: number, reason?: string): void
+  onopen: ((ev: any) => any) | null
+  onerror: ((ev: any) => any) | null
+  onmessage: ((ev: { data: ArrayBuffer | ArrayBufferView | Blob | string }) => any) | null
+}
+
+// 构造函数类型：与浏览器/isomorphic-ws 一致
+export type WebSocketConstructor = new (
+  url: string | URL,
+  protocols?: string | string[]
+) => WebSocketLike
+
 // --- New high-level client helper -------------------------------------------------
 /** Options for connectBitSealWS */
 export interface ConnectOptions {
@@ -84,19 +99,40 @@ export interface ConnectOptions {
   extraHeaders?: Record<string, string>
   /** supply a preconstructed salt (hex) – mainly for tests */
   clientSaltHex?: string
-  /** isomorphic-ws constructor (for dependency injection / tests) */
-  WebSocketImpl?: any
+  /** WebSocket 构造函数（默认使用 isomorphic-ws） */
+  WebSocketImpl?: WebSocketConstructor
   /** timeout ms for HTTP handshake */
   timeoutMs?: number
+  /**
+   * 业务回调：当收到一条解密后的明文时触发。
+   *
+   * plain       – 解密后的明文字节
+   * session     – 当前 BST2 Session，可用于 encode / decode
+   * ws          – WebSocket 对象，方便额外操作
+   * peerPub     – 对方公钥（服务器）
+   * selfPriv    – 自己的私钥
+   *
+   * 返回值：若返回 Uint8Array | string，则自动 encodeRecord 并通过 ws 发送；
+   *           返回 null/undefined 则表示无需回复。
+   */
+  onMessage?: (
+    plain: Uint8Array,
+    session: Session,
+    ws: WebSocketLike,
+    peerPub: PublicKey,
+    selfPriv: PrivateKey
+  ) => Uint8Array | string | null | undefined | Promise<Uint8Array | string | null | undefined>
 }
 
 /** Result of connectBitSealWS() */
 export interface ConnectResult {
-  ws: any /* WebSocket */
+  ws: WebSocketLike
   session: Session
   jwtPayload: Record<string, any>
   clientSaltHex: string
   token: string
+  /** 发送明文，内部自动 encodeRecord */
+  send: (plain: Uint8Array | string) => void
 }
 
 /**
@@ -112,7 +148,14 @@ export async function connectBitSealWS (
   wsUrl: string,
   opts: ConnectOptions = {}
 ): Promise<ConnectResult> {
-  const WebSocketCtor = opts.WebSocketImpl ?? (await import('isomorphic-ws')).default
+  // 优先使用调用方指定，其次检测全局 WebSocket（浏览器/Bun），最后回退 isomorphic-ws
+  let WebSocketCtor: WebSocketConstructor | undefined = opts.WebSocketImpl as WebSocketConstructor | undefined
+  if (!WebSocketCtor && typeof (globalThis as any).WebSocket === 'function') {
+    WebSocketCtor = (globalThis as any).WebSocket as WebSocketConstructor
+  }
+  if (!WebSocketCtor) {
+    WebSocketCtor = (await import('isomorphic-ws')).default as unknown as WebSocketConstructor
+  }
   const fetcher: typeof fetch = opts.fetchImpl ?? (globalThis as any).fetch
   if (!fetcher) throw new Error('fetch implementation not found')
 
@@ -164,6 +207,8 @@ export async function connectBitSealWS (
   const token = respJson.token as string
   const jwtPayload = verifyToken(token, serverPub)
 
+  console.log('[handshake] clientSalt', saltClientHex, 'serverSalt from resp', respJson.salt_s)
+
   // ---------- Step-2 WebSocket Upgrade (sub-protocol carries JWT) ----------
   const protocols = ['BitSeal-WS.1', token]
   const ws = new WebSocketCtor(wsUrl, protocols)
@@ -171,12 +216,52 @@ export async function connectBitSealWS (
   // wait until open
   await new Promise((resolve, reject) => {
     ws.onopen = () => resolve(undefined)
-    ws.onerror = (ev: any) => reject(ev.error ?? new Error('ws error'))
+    ws.onerror = (ev: any) => reject((ev as any).error ?? new Error('ws error'))
   })
 
   const session = sessionFromJwt(clientPriv, serverPub, jwtPayload, saltClientHex)
 
-  return { ws, session, jwtPayload, clientSaltHex: saltClientHex, token }
+  // 封装 send() – 隐藏 encodeRecord
+  const send = (plain: Uint8Array | string): void => {
+    const bytes = typeof plain === 'string' ? new TextEncoder().encode(plain) : plain
+    const frame = Buffer.from(session.encode(bytes))
+    console.log('[debug] send len', frame.length, 'first16', frame.subarray(0, 16).toString('hex'))
+    // 使用 Buffer.from 强制以 Binary Frame 发送
+    ws.send(frame)
+  }
+
+  // 自动封装 onmessage，若业务方提供了回调
+  if (opts.onMessage) {
+    ws.onmessage = async (ev) => {
+      try {
+        let raw: Uint8Array
+        if (typeof ev.data === 'string') {
+          raw = Buffer.from(ev.data, 'utf8')
+        } else if (ev.data instanceof ArrayBuffer || ArrayBuffer.isView(ev.data)) {
+          raw = new Uint8Array(ev.data as ArrayBuffer | ArrayBufferView)
+        } else if (globalThis.Blob && ev.data instanceof Blob) {
+          // Node-undici 在 binaryType=undefined 时默认返回 Blob
+          const ab = await ev.data.arrayBuffer()
+          raw = new Uint8Array(ab)
+        } else {
+          console.error('[debug] unsupported ev.data type', typeof ev.data, ev.data)
+          return
+        }
+
+        console.log('[debug] recv typeof', typeof ev.data, 'len', raw.length, 'first16', Buffer.from(raw).subarray(0, 16).toString('hex'))
+
+        const plain = session.decode(raw)
+        const resp = await opts.onMessage!(plain, session, ws, serverPub, clientPriv)
+        if (resp != null) {
+          send(resp)
+        }
+      } catch (err) {
+        console.error('onMessage handler error', err)
+      }
+    }
+  }
+
+  return { ws, session, jwtPayload, clientSaltHex: saltClientHex, token, send }
 }
 
 // --------------------------------------------------------------------------------- 
