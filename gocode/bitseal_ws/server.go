@@ -40,6 +40,11 @@ type Server struct {
 	// 回调返回的明文会再次加密后发回客户端；若返回 nil 则表示不需要回复。
 	// 若 OnMessage 本身为 nil，则 Server 默认回显收到的明文（兼容旧逻辑）。
 	OnMessage func(sess *rtc.Session, plain []byte) ([]byte, error)
+
+	// OnSession 会在成功与客户端建立 BST2 会话后立即调用，
+	// 以便业务层获取 Session（例如存入连接表、提取 peerPub 等）。
+	// 如不需要可保持为 nil。
+	OnSession func(sess *rtc.Session)
 }
 
 // NewServer creates a new BitSeal-WS server with its own ServeMux.
@@ -211,6 +216,11 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 	}
 
 	log.Printf("[BitSeal-WS] session established with client %x", state.clientPub.Compressed())
+
+	// 通知业务层新建会话
+	if s.OnSession != nil {
+		s.OnSession(sess)
+	}
 
 	// 强制后续发送使用 BinaryFrame，避免客户端误解为文本
 	ws.PayloadType = websocket.BinaryFrame

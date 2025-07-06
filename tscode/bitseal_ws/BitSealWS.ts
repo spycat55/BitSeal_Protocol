@@ -122,6 +122,9 @@ export interface ConnectOptions {
     peerPub: PublicKey,
     selfPriv: PrivateKey
   ) => Uint8Array | string | null | undefined | Promise<Uint8Array | string | null | undefined>
+
+  /** 成功建立 BST2 Session 后回调，可用于保存 session、读取 peerPub 等。*/
+  onSession?: (session: Session, ws: WebSocketLike, peerPub: PublicKey, selfPriv: PrivateKey) => void | Promise<void>
 }
 
 /** Result of connectBitSealWS() */
@@ -220,6 +223,15 @@ export async function connectBitSealWS (
   })
 
   const session = sessionFromJwt(clientPriv, serverPub, jwtPayload, saltClientHex)
+
+  // 业务回调：会话已建立
+  if (opts.onSession) {
+    try {
+      await opts.onSession(session, ws, serverPub, clientPriv)
+    } catch (err) {
+      console.error('onSession handler error', err)
+    }
+  }
 
   // 封装 send() – 隐藏 encodeRecord
   const send = (plain: Uint8Array | string): void => {

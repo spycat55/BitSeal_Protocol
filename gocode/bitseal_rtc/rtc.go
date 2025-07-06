@@ -94,6 +94,7 @@ type Session struct {
 	saltRecv   []byte // 4 bytes – 用于解密对端数据
 	seq        uint64 // send seq
 	recvWindow *window
+	peerPub    *ec.PublicKey // remote party's public key
 	// no cipher.AEAD, use aesgcm helpers
 }
 
@@ -142,6 +143,7 @@ func NewSession(selfPriv *ec.PrivateKey, peerPub *ec.PublicKey, selfSalt, peerSa
 		saltRecv:   peerSalt,
 		seq:        initSeq,
 		recvWindow: &window{size: 64, maxSeq: 0, bitmap: 0},
+		peerPub:    peerPub,
 		// aead field removed
 	}, nil
 }
@@ -220,4 +222,9 @@ func (w *window) accept(seq uint64) bool {
 	}
 	w.bitmap |= (1 << offset)
 	return true
+}
+
+// PeerPub returns peer's public key.
+func (s *Session) PeerPub() *ec.PublicKey {
+	return s.peerPub
 }

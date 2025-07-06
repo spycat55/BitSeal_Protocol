@@ -47,10 +47,11 @@ const deriveKey = (shared, saltA, saltB) => {
 }
 
 export class Session {
-  constructor (key, saltSend, saltRecv) {
+  constructor (key, saltSend, saltRecv, peerPub) {
     this.key = key
     this.saltSend = saltSend  // 用于本端发送
     this.saltRecv = saltRecv  // 用于解密对端数据
+    this._peerPub = peerPub    // 对端公钥
     this.seq = 0n
     this.windowSize = 64n
     this.maxSeq = 0n
@@ -67,7 +68,7 @@ export class Session {
     const rand = randomBytes(8)
     let init = 0n
     for (const b of rand) init = (init << 8n) + BigInt(b)
-    const sess = new Session(key, saltSelf, saltPeer)
+    const sess = new Session(key, saltSelf, saltPeer, peerPub)
     sess.seq = init
     return sess
   }
@@ -135,6 +136,11 @@ export class Session {
     if ((this.bitmap >> offset) & 1n) return false
     this.bitmap |= 1n << offset
     return true
+  }
+
+  /** 返回对端公钥 */
+  peerPub () {
+    return this._peerPub
   }
 }
 

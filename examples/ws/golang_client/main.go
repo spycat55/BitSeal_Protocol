@@ -27,6 +27,14 @@ func main() {
 	defer conn.Close()
 	log.Println("[client] connected to BitSeal-WS server")
 
+	// 测试 Session.PeerPub()
+	peer := conn.Session.PeerPub()
+	log.Printf("[client] session.PeerPub = %x", peer.Compressed())
+	if !peer.IsEqual(serverPub) {
+		log.Fatalf("peer pub mismatch, expect %x", serverPub.Compressed())
+	}
+	log.Println("[client] peer pub verified OK")
+
 	// 注册 OnMessage 回调，收到服务器消息时触发
 	conn.OnMessage = func(_ *rtc.Session, plain []byte) ([]byte, error) {
 		log.Printf("[client onMessage] recv: %q", string(plain))
