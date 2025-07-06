@@ -39,3 +39,10 @@ Follow the prompts to copy-paste the SDP between the two terminals – once conn
 ## License
 
 This project is released under the terms of the MIT License (see `LICENSE`).  Contributions and issue reports are welcome – feel free to open a PR!
+
+
+
+npm publish --workspace tscode --access public
+
+git tag gocode/v0.2.1
+git push origin gocode/v0.2.1
