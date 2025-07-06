@@ -1,19 +1,17 @@
 package bitsealws
 
 import (
-	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"time"
 
-	bsweb "bitseal/gocode/bitseal_web"
-	rtc "bitseal/gocode/bitseal_rtc"
+	rtc "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_rtc"
+	bsweb "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_web"
 
-	"github.com/golang-jwt/jwt/v5"
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"encoding/hex"
-	"strings"
 	"encoding/json"
+
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // BuildHandshakeRequest constructs body+headers like TS side.
@@ -54,28 +52,6 @@ func VerifyHandshakeRequest(body, method, uriPath string, headers map[string]str
 	return peerPub, obj.Salt, obj.Nonce, err
 }
 
-// CreateJWT returns ES256K token signed by serverPriv
-func CreateJWT(claims jwt.MapClaims, serverPriv *ec.PrivateKey, expSec int64) (string, error) {
-	if claims == nil {
-		claims = jwt.MapClaims{}
-	}
-	now := time.Now()
-	claims["iat"] = now.Unix()
-	claims["exp"] = now.Add(time.Duration(expSec) * time.Second).Unix()
-	token := jwt.NewWithClaims(jwt.SigningMethodES256K, claims)
-	ecdsaKey := (*ecdsa.PrivateKey)(serverPriv.ToECDSA())
-	return token.SignedString(ecdsaKey)
-}
-
-// VerifyJWT verifies token with server public key
-func VerifyJWT(tokenStr string, serverPub *ec.PublicKey) (jwt.MapClaims, error) {
-	ecdsaPub := (*ecdsa.PublicKey)(serverPub.ToECDSA())
-	parser := jwt.NewParser()
-	claims := jwt.MapClaims{}
-	_, err := parser.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) { return ecdsaPub, nil })
-	return claims, err
-}
-
 // NewSessionFromJWT builds BST2 session using jwt payload salts
 func NewSessionFromJWT(selfPriv *ec.PrivateKey, serverPub *ec.PublicKey, selfSaltHex string, jwtPayload jwt.MapClaims) (*rtc.Session, error) {
 	saltS, ok := jwtPayload["salt_s"].(string)
@@ -85,4 +61,6 @@ func NewSessionFromJWT(selfPriv *ec.PrivateKey, serverPub *ec.PublicKey, selfSal
 	selfSalt, _ := hex.DecodeString(selfSaltHex)
 	peerSalt, _ := hex.DecodeString(saltS)
 	return rtc.NewSession(selfPriv, serverPub, selfSalt, peerSalt)
-} 
+}
+
+// JWT helpers are moved to separate files (stub/full). See jwt_stub.go or jwt_full.go.

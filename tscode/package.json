@@ -16,7 +16,9 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@bsv/sdk": "^1.0.0"
+    "@bsv/sdk": "^1.0.0",
+    "isomorphic-ws": "^5.0.0",
+    "jose": "^5.2.0"
   },
   "devDependencies": {
     "tsup": "^7.3.0",

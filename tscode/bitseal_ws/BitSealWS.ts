@@ -77,12 +77,9 @@ export async function verifyJwt (token: string, serverPub: PublicKey): Promise<R
   return payload as Record<string, any>
 }
 
-/** Step-2: build Upgrade headers */
-export function buildUpgradeHeaders (jwtToken: string): Record<string, string> {
-  return {
-    'Sec-WebSocket-Protocol': 'BitSeal-WS/1.0',
-    'Authorization': `BitSeal ${jwtToken}`
-  }
+/** @deprecated 改用 WebSocket(url, ['BitSeal-WS/1.0', token]) */
+export function buildUpgradeHeaders (_jwt: string): Record<string, string> {
+  throw new Error('buildUpgradeHeaders deprecated; use sub-protocol array instead.')
 }
 
 /** Create BST2 session (client side) from own priv key and data in JWT */
@@ -96,4 +93,112 @@ export function sessionFromJwt (
   const saltServer = Array.from(Buffer.from(jwtPayload.salt_s as string, 'hex'))
   const sess = Session.create(clientPriv, serverPub, saltClient, saltServer)
   return sess
-} 
+}
+
+// --- New high-level client helper -------------------------------------------------
+/** Options for connectBitSealWS */
+export interface ConnectOptions {
+  /** HTTP origin, default derives from wsUrl if omitted */
+  httpBase?: string
+  /** custom fetch implementation */
+  fetchImpl?: typeof fetch
+  /** extra headers to append to POST /ws/handshake */
+  extraHeaders?: Record<string, string>
+  /** supply a preconstructed salt (hex) – mainly for tests */
+  clientSaltHex?: string
+  /** isomorphic-ws constructor (for dependency injection / tests) */
+  WebSocketImpl?: any
+  /** timeout ms for HTTP handshake */
+  timeoutMs?: number
+}
+
+/** Result of connectBitSealWS() */
+export interface ConnectResult {
+  ws: any /* WebSocket */
+  session: Session
+  jwtPayload: Record<string, any>
+  clientSaltHex: string
+  token: string
+}
+
+/**
+ * Complete client-side flow:
+ * 1. POST /ws/handshake 进行 BitSeal-WEB 签名握手，验证服务器回签。
+ * 2. 根据返回的 JWT、salt 等派生 BST2 Session。
+ * 3. 带 sub-protocol 与 Authorization 头发起 WebSocket Upgrade。
+ * 返回 {ws, session} 供上层读写（发送前 encodeRecord，收到后 decodeRecord）。
+ */
+export async function connectBitSealWS (
+  clientPriv: PrivateKey,
+  serverPub: PublicKey,
+  wsUrl: string,
+  opts: ConnectOptions = {}
+): Promise<ConnectResult> {
+  const WebSocketCtor = opts.WebSocketImpl ?? (await import('isomorphic-ws')).default
+  const fetcher: typeof fetch = opts.fetchImpl ?? (globalThis as any).fetch
+  if (!fetcher) throw new Error('fetch implementation not found')
+
+  // Derive HTTP base from wsUrl if not provided
+  let httpBase = opts.httpBase
+  if (!httpBase) {
+    const u = new URL(wsUrl)
+    u.protocol = u.protocol.startsWith('wss') ? 'https:' : 'http:'
+    httpBase = u.origin
+  }
+
+  // ---------- Step-1 POST /ws/handshake ----------
+  const { body, headers: signedHeaders, salt: saltClientHex } = buildHandshakeRequest(
+    clientPriv,
+    serverPub,
+    opts.clientSaltHex ? { nonce: undefined } : {}
+  )
+  if (opts.clientSaltHex) {
+    // override generated salt if provided
+    const bodyObj = JSON.parse(body)
+    bodyObj.salt = opts.clientSaltHex
+    const newBody = JSON.stringify(bodyObj)
+    // need to resign
+    Object.assign(signedHeaders, signRequest('POST', '/ws/handshake', '', newBody, clientPriv, serverPub))
+  }
+
+  const reqHeaders: Record<string, string> = { ...signedHeaders, ...(opts.extraHeaders ?? {}) }
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15000)
+  const res = await fetcher(`${httpBase}/ws/handshake`, {
+    method: 'POST',
+    headers: reqHeaders,
+    body,
+    signal: controller.signal
+  })
+  clearTimeout(timeout)
+  if (!res.ok) throw new Error(`handshake HTTP ${res.status}`)
+  const respText = await res.text()
+  const respJson = JSON.parse(respText)
+
+  // collect headers into simple map
+  const respHeaders: Record<string, string> = {}
+  res.headers.forEach((v, k) => { respHeaders[k] = v })
+
+  // verify server signature (BitSeal-WEB)
+  const ok = verifyRequest('POST', '/ws/handshake', '', respText, respHeaders, clientPriv)
+  if (!ok) throw new Error('server BitSeal signature invalid')
+
+  const token = respJson.token as string
+  const jwtPayload = await verifyJwt(token, serverPub)
+
+  // ---------- Step-2 WebSocket Upgrade (sub-protocol carries JWT) ----------
+  const protocols = ['BitSeal-WS/1.0', token]
+  const ws = new WebSocketCtor(wsUrl, protocols)
+
+  // wait until open
+  await new Promise((resolve, reject) => {
+    ws.onopen = () => resolve(undefined)
+    ws.onerror = (ev: any) => reject(ev.error ?? new Error('ws error'))
+  })
+
+  const session = sessionFromJwt(clientPriv, serverPub, jwtPayload, saltClientHex)
+
+  return { ws, session, jwtPayload, clientSaltHex: saltClientHex, token }
+}
+
+// --------------------------------------------------------------------------------- 

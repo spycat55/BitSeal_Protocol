@@ -34,7 +34,7 @@ BitSeal-WS 通过一次 **HTTPS 握手** 完成双向身份验证与会话密钥
 步骤说明：
 1. Client 发送 **HTTPS POST** 握手消息，Headers 与 Canonical String 继承 BitSeal-WEB；Body 为固定 JSON（见 §4）。
 2. Server 校验签名后以自身私钥签名响应，并返回 **JWT 令牌** `token` 与服务器侧盐值 `salt_s`。
-3. Client 随即（或复用连接）发起 `GET /ws/socket`，携带 `Upgrade: websocket`、`Sec-WebSocket-Protocol: BitSeal-WS/1.0` 以及 `Authorization: BitSeal <token>`。
+3. Client 随即（或复用连接）发起 `GET /ws/socket`，携带 `Upgrade: websocket` 与 `Sec-WebSocket-Protocol: BitSeal-WS/1.0,<token>`（子协议第二项为 JWT）。
 4. Server 验证 **JWT** 后返回 `101 Switching Protocols`。
 5. 双方进入 **BST2** 加密传输层，所有 WebSocket `binary` 帧均按 §6 格式封装。
 
@@ -88,10 +88,22 @@ JWT 签名算法：`ES256K`（secp256k1，低-s），使用 `SK_S` 进行签名�
 ## 5. WebSocket Upgrade
 Client 在 `GET /ws/socket` 请求头加入：
 ```
-Sec-WebSocket-Protocol: BitSeal-WS/1.0
-Authorization: BitSeal <token>
+Sec-WebSocket-Protocol: BitSeal-WS/1.0,<token>
 ```
-Server 验证 **JWT**、来源 IP 等，成功后回 `101 Switching Protocols` 并同样标注 `Sec-WebSocket-Protocol: BitSeal-WS/1.0`。
+Server 解析第二个子协议条目获取 **JWT**，验证通过后回 `101 Switching Protocols`，可只回显 `Sec-WebSocket-Protocol: BitSeal-WS/1.0`（RFC 6455 允许子集）。
+
+> **规范要求**：`token` **必须**通过子协议第二项携带；不再支持 URL 查询、Cookie、Authorization 头等其他方式。
+
+示例：
+
+```js
+// Browser / Node 客户端
+const ws = new WebSocket('wss://api.example.com/ws/socket', ['BitSeal-WS/1.0', token])
+
+// Go 服务器端 (golang.org/x/net/websocket)
+protos := strings.Split(req.Header.Get("Sec-WebSocket-Protocol"), ",")
+token := strings.TrimSpace(protos[1])
+```
 
 ---
 ## 6. BST2 – 加密帧格式
