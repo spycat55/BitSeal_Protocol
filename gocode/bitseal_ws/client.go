@@ -26,6 +26,10 @@ type BitSealWSConn struct {
 	Conn    *websocket.Conn
 	Session *rtc.Session
 
+	// Extra 保存服务器握手响应中除 token/salt_s/ts/nonce 之外的所有字段，
+	// 对应服务端 OnHandshakeResponse 注入的自定义数据。
+	Extra map[string]any
+
 	// OnMessage 若非 nil，则 Serve/ServeAsync 解包明文后调用；
 	// 返回值非 nil ⇒ 自动 Encode + 发送；
 	OnMessage func(sess *rtc.Session, plain []byte) ([]byte, error)
@@ -164,21 +168,30 @@ func ConnectBitSealWS(clientPriv *ec.PrivateKey, serverPub *ec.PublicKey, wsURL 
 		return nil, errors.New("server BitSeal signature invalid")
 	}
 
-	// 解析 JSON 响应
-	var obj struct {
-		Token string `json:"token"`
-		SaltS string `json:"salt_s"`
-		Ts    int64  `json:"ts"`
-		Nonce string `json:"nonce"`
-	}
-	if err := json.Unmarshal(respBodyBytes, &obj); err != nil {
+	// 首先用通用 map 解析，以便捕获所有扩展字段
+	var raw map[string]any
+	if err := json.Unmarshal(respBodyBytes, &raw); err != nil {
 		return nil, err
 	}
 
+	// 提取标准字段并做类型断言
+	tokenVal, _ := raw["token"].(string)
+	saltSVal, _ := raw["salt_s"].(string)
+	// ts / nonce 可选，可不验证
+
+	if tokenVal == "" || saltSVal == "" {
+		return nil, errors.New("handshake response missing token/salt_s")
+	}
+
 	// 验证 SimpleToken
-	if _, err := VerifyToken(obj.Token, serverPub); err != nil {
+	if _, err := VerifyToken(tokenVal, serverPub); err != nil {
 		return nil, fmt.Errorf("token verify: %w", err)
 	}
+
+	// 分离 extra 字段
+	delete(raw, "token")
+	delete(raw, "salt_s")
+	// 其余字段原样保存
 
 	// ---------- Step-2 WebSocket Upgrade ----------
 	origin := &url.URL{Scheme: "http", Host: u.Host}
@@ -189,7 +202,7 @@ func ConnectBitSealWS(clientPriv *ec.PrivateKey, serverPub *ec.PublicKey, wsURL 
 	if err != nil {
 		return nil, err
 	}
-	cfg.Protocol = []string{"BitSeal-WS.1", obj.Token}
+	cfg.Protocol = []string{"BitSeal-WS.1", tokenVal}
 	wsConn, err := websocket.DialConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -197,14 +210,14 @@ func ConnectBitSealWS(clientPriv *ec.PrivateKey, serverPub *ec.PublicKey, wsURL 
 
 	// ---------- 建立 BST2 会话 ----------
 	saltCBytes, _ := hex.DecodeString(saltC)
-	saltSBytes, _ := hex.DecodeString(obj.SaltS)
+	saltSBytes, _ := hex.DecodeString(saltSVal)
 	sess, err := rtc.NewSession(clientPriv, serverPub, saltCBytes, saltSBytes)
 	if err != nil {
 		wsConn.Close()
 		return nil, err
 	}
 
-	return &BitSealWSConn{Conn: wsConn, Session: sess}, nil
+	return &BitSealWSConn{Conn: wsConn, Session: sess, Extra: raw}, nil
 }
 
 // randomSalt4Hex 生成 4 字节随机盐（8 字符 hex）。

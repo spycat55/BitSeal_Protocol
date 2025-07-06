@@ -28,6 +28,14 @@ func main() {
 		return resp, nil
 	}
 
+	// 添加握手回调，向返回 JSON 注入测试字段
+	srv.OnHandshakeResponse = func(r *http.Request, clientPub *ec.PublicKey, nonce string) map[string]any {
+		return map[string]any{
+			"role":    "guest",
+			"welcome": "hello from Go server",
+		}
+	}
+
 	addr := ":8080"
 	fmt.Println("BitSeal-WS demo server listening on", addr)
 	if err := http.ListenAndServe(addr, srv); err != nil {

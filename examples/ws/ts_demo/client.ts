@@ -15,7 +15,7 @@ function fixedPriv(b: number): PrivateKey {
   console.log('script start')
 
   try {
-    const { ws, send, session } = await connectBitSealWS(clientPriv, serverPub, 'ws://localhost:8080/ws/socket', {
+    const { ws, send, session, extra } = await connectBitSealWS(clientPriv, serverPub, 'ws://localhost:8080/ws/socket', {
       WebSocketImpl: WebSocket as unknown as any,
       onSession: (sess, _ws, peerPub) => {
         console.log('[onSession] peerPub(hex)=', peerPub.encode(true, 'hex'))
@@ -29,7 +29,8 @@ function fixedPriv(b: number): PrivateKey {
       }
     })
 
-    console.log('connected, ws.readyState =', (ws as any).readyState, 'sending hello via send()')
+    console.log('connected, extra fields =', extra)
+    console.log('ws.readyState =', (ws as any).readyState, 'sending hello via send()')
 
     ;(ws as any).onopen = () => console.log('[debug] ws onopen')
     ;(ws as any).onerror = (e: any) => console.log('[debug] ws onerror', e)

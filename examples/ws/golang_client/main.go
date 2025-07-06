@@ -26,6 +26,7 @@ func main() {
 	}
 	defer conn.Close()
 	log.Println("[client] connected to BitSeal-WS server")
+	log.Printf("[client] extra fields: %+v", conn.Extra)
 
 	// 测试 Session.PeerPub()
 	peer := conn.Session.PeerPub()

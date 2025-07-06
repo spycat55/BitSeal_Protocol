@@ -45,6 +45,15 @@ type Server struct {
 	// 以便业务层获取 Session（例如存入连接表、提取 peerPub 等）。
 	// 如不需要可保持为 nil。
 	OnSession func(sess *rtc.Session)
+
+	// OnHandshakeResponse 允许业务层在握手阶段向返回给客户端的 JSON
+	// 中添加额外的键值对。若回调返回的 map 不为 nil，则其中的所有键值对
+	// 将被合并进默认的 respObj 中；若键已存在则以回调结果为准。
+	// 典型用法是在创建 Server 后赋值，例如：
+	//   srv.OnHandshakeResponse = func(r *http.Request, clientPub *ec.PublicKey, nonce string) map[string]any {
+	//       return map[string]any{"welcome": "hello"}
+	//   }
+	OnHandshakeResponse func(r *http.Request, clientPub *ec.PublicKey, nonce string) map[string]any
 }
 
 // NewServer creates a new BitSeal-WS server with its own ServeMux.
@@ -138,6 +147,21 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		"ts":     time.Now().UnixMilli(),
 		"nonce":  nonce,
 	}
+
+	// OnHandshakeResponse 允许业务层在握手阶段向返回给客户端的 JSON
+	// 中添加额外的键值对。若回调返回的 map 不为 nil，则其中的所有键值对
+	// 将被合并进默认的 respObj 中；若键已存在则以回调结果为准。
+	// 典型用法是在创建 Server 后赋值，例如：
+	//   srv.OnHandshakeResponse = func(r *http.Request, clientPub *ec.PublicKey, nonce string) map[string]any {
+	//       return map[string]any{"welcome": "hello"}
+	//   }
+	if s.OnHandshakeResponse != nil {
+		extra := s.OnHandshakeResponse(r, clientPub, nonce)
+		for k, v := range extra {
+			respObj[k] = v // overwrite if duplicated key
+		}
+	}
+
 	respBody, _ := json.Marshal(respObj)
 
 	// Sign response headers with serverPriv and clientPub (reuse BitSeal-WEB algo)

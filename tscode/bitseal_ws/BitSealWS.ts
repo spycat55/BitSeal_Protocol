@@ -134,6 +134,8 @@ export interface ConnectResult {
   jwtPayload: Record<string, any>
   clientSaltHex: string
   token: string
+  /** 服务端额外返回字段（respJson 去除 token / salt_s 后剩余部分） */
+  extra: Record<string, any>
   /** 发送明文，内部自动 encodeRecord */
   send: (plain: Uint8Array | string) => void
 }
@@ -197,7 +199,7 @@ export async function connectBitSealWS (
   clearTimeout(timeout)
   if (!res.ok) throw new Error(`handshake HTTP ${res.status}`)
   const respText = await res.text()
-  const respJson = JSON.parse(respText)
+  const respJson: Record<string, any> = JSON.parse(respText)
 
   // collect headers into simple map
   const respHeaders: Record<string, string> = {}
@@ -211,6 +213,11 @@ export async function connectBitSealWS (
   const jwtPayload = verifyToken(token, serverPub)
 
   console.log('[handshake] clientSalt', saltClientHex, 'serverSalt from resp', respJson.salt_s)
+
+  // derive extra payload (copy then delete known keys)
+  const extraPayload: Record<string, any> = { ...respJson }
+  delete extraPayload.token
+  delete extraPayload.salt_s
 
   // ---------- Step-2 WebSocket Upgrade (sub-protocol carries JWT) ----------
   const protocols = ['BitSeal-WS.1', token]
@@ -273,7 +280,67 @@ export async function connectBitSealWS (
     }
   }
 
-  return { ws, session, jwtPayload, clientSaltHex: saltClientHex, token, send }
+  return { ws, session, jwtPayload, clientSaltHex: saltClientHex, token, extra: extraPayload, send }
+}
+
+// ---------------------------------------------------------------------------------
+// Server-side helper: build handshake response JSON & headers
+// ---------------------------------------------------------------------------------
+
+export interface HandshakeResponseOptions {
+  /** override expire seconds for SimpleToken, default 60 */
+  expSec?: number
+  /** 业务扩展回调：返回要合并进响应 JSON 的键值对（同键覆盖）。*/
+  onHandshakeResponse?: (req: {
+    clientPub: PublicKey
+    nonce: string
+  }) => Record<string, any> | undefined
+}
+
+/**
+ * 根据已通过 verifyHandshakeRequest() 的信息，生成返回给客户端的 JSON body 与签名头。
+ *
+ * @param serverPriv   服务器私钥
+ * @param clientPub    客户端公钥
+ * @param nonce        verifyHandshakeRequest 返回的 nonce
+ * @param opts         可选：token 过期秒数、业务回调合并额外字段
+ */
+export function buildHandshakeResponse (
+  serverPriv: PrivateKey,
+  clientPub: PublicKey,
+  nonce: string,
+  opts: HandshakeResponseOptions = {}
+): { body: string, headers: BitSealHeaders, token: string, saltS: string } {
+  const saltS = randomSalt4()
+
+  // Build SimpleToken payload
+  const claims = {
+    addr: `pk:${clientPub.encode(true, 'hex')}`,
+    salt_s: saltS,
+    nonce
+  }
+  const token = createSimpleToken(claims, serverPriv, opts.expSec ?? 60)
+
+  // default response object
+  const respObj: Record<string, any> = {
+    token,
+    salt_s: saltS,
+    ts: Date.now(),
+    nonce
+  }
+
+  // merge business extras
+  if (opts.onHandshakeResponse) {
+    const extra = opts.onHandshakeResponse({ clientPub, nonce }) ?? {}
+    Object.assign(respObj, extra)
+  }
+
+  const body = JSON.stringify(respObj)
+
+  // Sign headers using BitSeal-WEB helper (same algorithm as Go version)
+  const headers = signRequest('POST', '/ws/handshake', '', body, serverPriv, clientPub)
+
+  return { body, headers, token, saltS }
 }
 
 // --------------------------------------------------------------------------------- 
