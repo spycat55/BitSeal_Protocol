@@ -27,7 +27,7 @@ func TestOutOfOrderDuplicate(t *testing.T) {
 	saltB := []byte{5, 6, 7, 8}
 
 	sessA, _ := NewSession(privA, privB.PubKey(), saltA, saltB)
-	sessB, _ := NewSession(privB, privA.PubKey(), saltA, saltB)
+	sessB, _ := NewSession(privB, privA.PubKey(), saltB, saltA)
 
 	fragA := NewFragmenter(sessA)
 	recvB := NewReassembler(sessB)
@@ -59,7 +59,7 @@ func TestOutOfOrderDuplicate(t *testing.T) {
 		}
 	}
 	if assembled == nil {
-		t.Fatalf("failed to assemble message; received=%d expected=%d", recvB.msgs[1].received, recvB.msgs[1].total)
+		t.Fatal("failed to assemble message; not fully reassembled")
 	}
 	if !bytes.Equal(assembled, msg) {
 		t.Fatal("assembled payload mismatch")

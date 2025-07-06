@@ -51,8 +51,21 @@ func NewServer(priv *ec.PrivateKey) *Server {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/ws/handshake", s.handleHandshake)
-	// Use websocket.Handler to perform the Upgrade after preliminary checks
-	s.mux.Handle("/ws/socket", websocket.Handler(s.handleSocket))
+
+	// 自定义 websocket.Server 以显式允许 "BitSeal-WS.1" 子协议。
+	wsServer := websocket.Server{
+		Handshake: func(cfg *websocket.Config, req *http.Request) error {
+			// 验证第一个子协议必须为 BitSeal-WS.1
+			if len(cfg.Protocol) == 0 || strings.TrimSpace(cfg.Protocol[0]) != "BitSeal-WS.1" {
+				return fmt.Errorf("unsupported subprotocol")
+			}
+			// 告诉库我们接受此子协议（返回给客户端的 Sec-WebSocket-Protocol）
+			cfg.Protocol = []string{"BitSeal-WS.1"}
+			return nil // 继续默认握手流程
+		},
+		Handler: websocket.Handler(s.handleSocket),
+	}
+	s.mux.Handle("/ws/socket", &wsServer)
 }
 
 // ServeHTTP implements http.Handler so Server can be passed to http.ListenAndServe.

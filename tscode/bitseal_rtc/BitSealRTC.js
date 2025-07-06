@@ -31,8 +31,18 @@ export const verifyHandshake = (raw, sig, selfPriv) => {
   return { peerPub, salt }
 }
 
-const deriveKey = (shared, saltSelf, saltPeer) => {
-  const data = [...shared, ...saltSelf, ...saltPeer]
+const deriveKey = (shared, saltA, saltB) => {
+  // 确保双方拼接顺序一致：按字典序排序 salt
+  const cmp = (a, b) => {
+    for (let i = 0; i < 4; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i]
+    }
+    return 0
+  }
+  if (cmp(saltA, saltB) > 0) {
+    [saltA, saltB] = [saltB, saltA]
+  }
+  const data = [...shared, ...saltA, ...saltB]
   return sha256(data)
 }
 

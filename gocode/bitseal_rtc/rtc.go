@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	primitives "github.com/bsv-blockchain/go-sdk/primitives/aesgcm"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
@@ -9,6 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	primitives "github.com/bsv-blockchain/go-sdk/primitives/aesgcm"
+
+	"bytes"
 
 	"github.com/bsv-blockchain/go-sdk/message"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -44,7 +47,7 @@ func BuildHandshake(selfPriv *ec.PrivateKey, peerPub *ec.PublicKey) ([]byte, []b
 	// Sign raw bytes directly per BRC-77
 	// (digesting is done internally in the signing algorithm if required)
 	// Keep consistent with TypeScript implementation which signs raw.
-	
+
 	sig, err := message.Sign(raw, selfPriv, peerPub)
 	if err != nil {
 		return nil, nil, nil, err
@@ -87,7 +90,8 @@ func VerifyHandshake(raw, sig []byte, selfPriv *ec.PrivateKey) (*ec.PublicKey, [
 // Session represents an established BST2 session.
 type Session struct {
 	key        []byte // 32-byte AES key
-	salt       []byte // 4 bytes
+	saltSend   []byte // 4 bytes – 用于本端发送
+	saltRecv   []byte // 4 bytes – 用于解密对端数据
 	seq        uint64 // send seq
 	recvWindow *window
 	// no cipher.AEAD, use aesgcm helpers
@@ -101,6 +105,10 @@ type window struct {
 
 // deriveKey derives 32-byte session key from shared secret + salts.
 func deriveKey(shared, saltA, saltB []byte) []byte {
+	// 为保证两端顺序一致，按字典序拼接 saltA、saltB。
+	if bytes.Compare(saltA, saltB) > 0 {
+		saltA, saltB = saltB, saltA
+	}
 	data := append(shared, saltA...)
 	data = append(data, saltB...)
 	return crypto.Sha256(data)
@@ -126,7 +134,8 @@ func NewSession(selfPriv *ec.PrivateKey, peerPub *ec.PublicKey, selfSalt, peerSa
 
 	return &Session{
 		key:        key,
-		salt:       selfSalt,
+		saltSend:   selfSalt,
+		saltRecv:   peerSalt,
 		seq:        initSeq,
 		recvWindow: &window{size: 64, maxSeq: 0, bitmap: 0},
 		// aead field removed
@@ -138,7 +147,7 @@ func (s *Session) EncodeRecord(plaintext []byte, flags byte) ([]byte, error) {
 	s.seq++
 	seqBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(seqBytes, s.seq)
-	nonce := append(s.salt, seqBytes...)
+	nonce := append(s.saltSend, seqBytes...)
 	ad := append([]byte{flags}, seqBytes...)
 	cipherTextOnly, tag, err := primitives.AESGCMEncrypt(plaintext, s.key, nonce, ad)
 	if err != nil {
@@ -176,7 +185,7 @@ func (s *Session) DecodeRecord(frame []byte) ([]byte, error) {
 	tag := frame[len(frame)-tagSize:]
 	seqBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(seqBytes, seq)
-	nonce := append(s.salt, seqBytes...)
+	nonce := append(s.saltRecv, seqBytes...)
 	ad := append([]byte{flags}, seqBytes...)
 	plain, err := primitives.AESGCMDecrypt(cipherTextOnly, s.key, nonce, ad, tag)
 	if err != nil {

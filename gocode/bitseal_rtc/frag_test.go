@@ -25,7 +25,7 @@ func TestFragmentRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessB, err := NewSession(privB, privA.PubKey(), saltA, saltB)
+	sessB, err := NewSession(privB, privA.PubKey(), saltB, saltA)
 	if err != nil {
 		t.Fatal(err)
 	}
