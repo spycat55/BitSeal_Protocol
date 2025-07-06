@@ -83,10 +83,15 @@ export function verifyRequest (
   headers: Record<string, string>,
   serverPriv: PrivateKey
 ): boolean {
-  if (headers['X-BKSA-Protocol'] !== 'BitSeal') return false
-  const timestamp = headers['X-BKSA-Timestamp']
-  const nonce = headers['X-BKSA-Nonce']
-  const sigBase64 = headers['X-BKSA-Sig']
+  // Header names may be lower-cased by fetch/bun runtime; normalize lookup helper
+  const h = (name: string): string | undefined => {
+    return headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()]
+  }
+
+  if (h('X-BKSA-Protocol') !== 'BitSeal') return false
+  const timestamp = h('X-BKSA-Timestamp')
+  const nonce = h('X-BKSA-Nonce')
+  const sigBase64 = h('X-BKSA-Sig')
   if (!timestamp || !nonce || !sigBase64) return false
   const canonical = buildCanonicalString(method, uriPath, query, body, timestamp, nonce)
   const digest = sha256(canonical, 'utf8')

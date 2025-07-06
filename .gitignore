@@ -16,3 +16,5 @@ tscode/bitseal-*.tgz
 examples/ts_demo/node_modules
 ws_ts_ws.json
 ws_go_ws.json
+token_go.json
+token_ts.json

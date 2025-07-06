@@ -3,13 +3,14 @@
 
 import PrivateKey from '@bsv/sdk/primitives/PrivateKey'
 import PublicKey from '@bsv/sdk/primitives/PublicKey'
+import BigNumber from '@bsv/sdk/primitives/BigNumber'
 import { randomBytes } from 'crypto'
 import { toHex } from '@bsv/sdk/primitives/utils'
 import { signRequest, BitSealHeaders, verifyRequest } from '../bitseal_web/BitSeal'
 import { Session } from '../bitseal_rtc/BitSealRTC.js'
 import { sha256 } from '@bsv/sdk/primitives/Hash'
 import { sign as brc77Sign, verify as brc77Verify } from '@bsv/sdk/messages/SignedMessage'
-import * as jose from 'jose' // ES256K JWT (assumes jose >=5)
+import { createToken as createSimpleToken, verifyToken } from './SimpleToken'
 
 /** Generate a 4-byte random salt in hex */
 const randomSalt4 = (): string => toHex(Array.from(randomBytes(4)))
@@ -22,7 +23,7 @@ export function buildHandshakeRequest (
 ): { body: string, headers: BitSealHeaders, salt: string } {
   const salt = randomSalt4()
   const bodyObj = {
-    proto: 'BitSeal-WS/1.0',
+    proto: 'BitSeal-WS.1',
     pk: clientPriv.toPublicKey().encode(true, 'hex'),
     salt,
     nonce: opts.nonce ?? randomBytes(16).toString('hex')
@@ -52,29 +53,6 @@ export function verifyHandshakeRequest (
     salt: obj.salt,
     nonce: obj.nonce
   }
-}
-
-/** Create JWT token signed by server private key (ES256K low-s) */
-export async function createJwtToken (
-  payload: Record<string, any>,
-  serverPriv: PrivateKey,
-  expSec = 60
-): Promise<string> {
-  const pkJwk = await jose.exportJWK(serverPriv.toPublicKey().toRaw()) // placeholder; adjust conversion
-  const privJwk = await jose.exportJWK(serverPriv.toRaw())
-  const jwt = await new jose.SignJWT(payload)
-    .setProtectedHeader({ alg: 'ES256K' })
-    .setIssuedAt()
-    .setExpirationTime(`${expSec}s`)
-    .sign(jose.importJWK(privJwk, 'ES256K'))
-  return jwt
-}
-
-/** Verify JWT using server public key */
-export async function verifyJwt (token: string, serverPub: PublicKey): Promise<Record<string, any>> {
-  const pubJwk = await jose.exportJWK(serverPub.toRaw())
-  const { payload } = await jose.jwtVerify(token, await jose.importJWK(pubJwk, 'ES256K'))
-  return payload as Record<string, any>
 }
 
 /** @deprecated 改用 WebSocket(url, ['BitSeal-WS/1.0', token]) */
@@ -184,10 +162,10 @@ export async function connectBitSealWS (
   if (!ok) throw new Error('server BitSeal signature invalid')
 
   const token = respJson.token as string
-  const jwtPayload = await verifyJwt(token, serverPub)
+  const jwtPayload = verifyToken(token, serverPub)
 
   // ---------- Step-2 WebSocket Upgrade (sub-protocol carries JWT) ----------
-  const protocols = ['BitSeal-WS/1.0', token]
+  const protocols = ['BitSeal-WS.1', token]
   const ws = new WebSocketCtor(wsUrl, protocols)
 
   // wait until open

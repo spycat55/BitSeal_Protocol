@@ -3,6 +3,7 @@ import { Fragmenter, Reassembler } from './Fragment'
 import { Session } from './BitSealRTC.js'
 import PrivateKey from '@bsv/sdk/primitives/PrivateKey'
 import { randomBytes } from 'crypto'
+import { describe, test, expect } from 'vitest'
 
 function priv(byteVal:number):PrivateKey {
   const bytes = new Array(32).fill(0)

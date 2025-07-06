@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -73,15 +74,19 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	bodyStr := string(bodyBytes)
 
 	// Convert headers into simple map[string]string expected by helper.
-	hdr := make(map[string]string)
-	for k, v := range r.Header {
-		if len(v) > 0 {
-			hdr[k] = v[0]
-		}
+	hdr := map[string]string{
+		"X-BKSA-Protocol":  r.Header.Get("X-BKSA-Protocol"),
+		"X-BKSA-Sig":       r.Header.Get("X-BKSA-Sig"),
+		"X-BKSA-Timestamp": r.Header.Get("X-BKSA-Timestamp"),
+		"X-BKSA-Nonce":     r.Header.Get("X-BKSA-Nonce"),
 	}
+
+	// debug log for incoming handshake
+	log.Printf("[BitSeal-WS] handshake POST from %s", r.RemoteAddr)
 
 	clientPub, saltC, nonce, err := VerifyHandshakeRequest(bodyStr, r.Method, r.URL.Path, hdr, s.priv)
 	if err != nil {
+		log.Printf("[BitSeal-WS] handshake verify failed: %v", err)
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("verify failed"))
 		return
@@ -96,8 +101,9 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		"salt_s": saltS,
 		"nonce":  nonce,
 	}
-	token, err := CreateJWT(claims, s.priv, 60)
+	token, err := CreateToken(claims, s.priv, 60)
 	if err != nil {
+		log.Printf("[BitSeal-WS] create token error: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -127,6 +133,8 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	_, _ = w.Write(respBody)
+
+	log.Printf("[BitSeal-WS] handshake success nonce=%s client=%x", nonce, clientPub.Compressed())
 }
 
 // --- Step-2: WebSocket Upgrade /ws/socket ---
@@ -140,14 +148,18 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 		return
 	}
 	protoName := strings.TrimSpace(protos[0])
-	if protoName != "BitSeal-WS/1.0" {
+	if protoName != "BitSeal-WS.1" {
 		_ = ws.Close()
 		return
 	}
 	token := strings.TrimSpace(protos[1])
 
-	claims, err := VerifyJWT(token, s.pub)
+	// debug log for incoming websocket upgrade
+	log.Printf("[BitSeal-WS] websocket upgrade from %s", req.RemoteAddr)
+
+	claims, err := VerifyToken(token, s.pub)
 	if err != nil {
+		log.Printf("[BitSeal-WS] token verify failed: %v", err)
 		_ = ws.Close()
 		return
 	}
@@ -166,6 +178,7 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 	}
 	s.mu.Unlock()
 	if !ok {
+		log.Printf("[BitSeal-WS] nonce %s not found in pending map", nonceVal)
 		_ = ws.Close()
 		return
 	}
@@ -173,9 +186,12 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 	// Build BST2 session
 	sess, err := rtc.NewSession(s.priv, state.clientPub, bytesFromHex(state.serverSalt), bytesFromHex(state.clientSalt))
 	if err != nil {
+		log.Printf("[BitSeal-WS] session creation failed: %v", err)
 		_ = ws.Close()
 		return
 	}
+
+	log.Printf("[BitSeal-WS] session established with client %x", state.clientPub.Compressed())
 
 	// Simple echo loop: decrypt incoming, print log, then echo back.
 	buf := make([]byte, 1024*64)
@@ -187,12 +203,15 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 		frame := buf[:n]
 		plain, err := sess.DecodeRecord(frame)
 		if err != nil {
+			log.Printf("[BitSeal-WS] decode error: %v", err)
 			continue // skip invalid
 		}
-		// Business logic: here we simply echo back same plaintext
+		log.Printf("[BitSeal-WS] recv: %d bytes plain=%q", len(plain), string(plain))
 		outFrame, _ := sess.EncodeRecord(plain, 0)
 		_ = websocket.Message.Send(ws, outFrame)
 	}
+
+	log.Printf("[BitSeal-WS] connection closed")
 }
 
 // Helper: 4-byte random salt hex

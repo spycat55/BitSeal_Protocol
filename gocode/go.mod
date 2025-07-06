@@ -6,7 +6,6 @@ toolchain go1.24.4
 
 require (
 	github.com/bsv-blockchain/go-sdk v1.2.4
-	github.com/golang-jwt/jwt/v5 v5.2.1
 	golang.org/x/net v0.41.0
 )
 
