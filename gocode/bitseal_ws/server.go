@@ -36,6 +36,9 @@ type Server struct {
 	pending map[string]*handshakeState // keyed by nonce from Step-1
 	mu      sync.Mutex
 
+	// 保存已建立连接的客户端：压缩公钥 hex -> (session, websocket.Conn)
+	clients map[string]*clientConn
+
 	// OnMessage 为业务回调；若不为 nil，则在收到每条消息后调用以生成响应明文。
 	// 回调返回的明文会再次加密后发回客户端；若返回 nil 则表示不需要回复。
 	// 若 OnMessage 本身为 nil，则 Server 默认回显收到的明文（兼容旧逻辑）。
@@ -54,6 +57,32 @@ type Server struct {
 	//       return map[string]any{"welcome": "hello"}
 	//   }
 	OnHandshakeResponse func(r *http.Request, clientPub *ec.PublicKey, nonce string) map[string]any
+}
+
+// clientConn bundle
+type clientConn struct {
+	sess *rtc.Session
+	ws   *websocket.Conn
+}
+
+// SendTo 查找目标客户端并发送明文（自动 BST2 encodeRecord）。
+// 若找不到目标或发送失败则返回 error。
+func (s *Server) SendTo(peerPub *ec.PublicKey, plain []byte) error {
+	if peerPub == nil {
+		return fmt.Errorf("nil peerPub")
+	}
+	key := fmt.Sprintf("%x", peerPub.Compressed())
+	s.mu.Lock()
+	cc, ok := s.clients[key]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("peer not connected")
+	}
+	frame, err := cc.sess.EncodeRecord(plain, 0)
+	if err != nil {
+		return err
+	}
+	return websocket.Message.Send(cc.ws, frame)
 }
 
 // NewServer creates a new BitSeal-WS server with its own ServeMux.
@@ -256,6 +285,15 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 
 	log.Printf("[BitSeal-WS] session established with client %x", state.clientPub.Compressed())
 
+	// 将连接保存至 clients map
+	peerHex := fmt.Sprintf("%x", state.clientPub.Compressed())
+	s.mu.Lock()
+	if s.clients == nil {
+		s.clients = make(map[string]*clientConn)
+	}
+	s.clients[peerHex] = &clientConn{sess: sess, ws: ws}
+	s.mu.Unlock()
+
 	// 通知业务层新建会话
 	if s.OnSession != nil {
 		s.OnSession(sess)
@@ -299,6 +337,11 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 			_ = websocket.Message.Send(ws, outFrame)
 		}
 	}
+
+	// 连接关闭后清理 clients map
+	s.mu.Lock()
+	delete(s.clients, peerHex)
+	s.mu.Unlock()
 
 	log.Printf("[BitSeal-WS] connection closed")
 }
