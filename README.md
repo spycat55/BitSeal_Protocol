@@ -44,5 +44,5 @@ This project is released under the terms of the MIT License (see `LICENSE`).  Co
 
 npm publish --workspace tscode --access public
 
-git tag gocode/v0.2.3
-git push origin gocode/v0.2.3
+git tag gocode/v0.2.4
+git push origin gocode/v0.2.4
