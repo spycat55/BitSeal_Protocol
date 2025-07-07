@@ -4,8 +4,8 @@
 import PrivateKey from '@bsv/sdk/primitives/PrivateKey'
 import PublicKey from '@bsv/sdk/primitives/PublicKey'
 import BigNumber from '@bsv/sdk/primitives/BigNumber'
-import { randomBytes } from 'crypto'
-import { toHex } from '@bsv/sdk/primitives/utils'
+import Random from '@bsv/sdk/primitives/Random'
+import { toHex, toArray } from '@bsv/sdk/primitives/utils'
 import { signRequest, BitSealHeaders, verifyRequest } from '../bitseal_web/BitSeal'
 import { Session } from '../bitseal_rtc/BitSealRTC.js'
 import { sha256 } from '@bsv/sdk/primitives/Hash'
@@ -13,7 +13,7 @@ import { sign as brc77Sign, verify as brc77Verify } from '@bsv/sdk/messages/Sign
 import { createToken as createSimpleToken, verifyToken } from './SimpleToken'
 
 /** Generate a 4-byte random salt in hex */
-const randomSalt4 = (): string => toHex(Array.from(randomBytes(4)))
+const randomSalt4 = (): string => toHex(Random(4))
 
 /** Step-1: build POST /ws/handshake body + headers */
 export function buildHandshakeRequest (
@@ -26,7 +26,7 @@ export function buildHandshakeRequest (
     proto: 'BitSeal-WS.1',
     pk: clientPriv.toPublicKey().encode(true, 'hex'),
     salt,
-    nonce: opts.nonce ?? randomBytes(16).toString('hex')
+    nonce: opts.nonce ?? toHex(Random(16))
   }
   const body = JSON.stringify(bodyObj)
   const headers = signRequest('POST', '/ws/handshake', '', body, clientPriv, serverPub, {
@@ -67,8 +67,8 @@ export function sessionFromJwt (
   jwtPayload: Record<string, any>,
   saltClientHex: string
 ): Session {
-  const saltClient = Array.from(Buffer.from(saltClientHex, 'hex'))
-  const saltServer = Array.from(Buffer.from(jwtPayload.salt_s as string, 'hex'))
+  const saltClient = toArray(saltClientHex, 'hex')
+  const saltServer = toArray(jwtPayload.salt_s as string, 'hex')
   const sess = Session.create(clientPriv, serverPub, saltClient, saltServer)
   return sess
 }
@@ -243,10 +243,9 @@ export async function connectBitSealWS (
   // 封装 send() – 隐藏 encodeRecord
   const send = (plain: Uint8Array | string): void => {
     const bytes = typeof plain === 'string' ? new TextEncoder().encode(plain) : plain
-    const frame = Buffer.from(session.encode(bytes))
-    console.log('[debug] send len', frame.length, 'first16', frame.subarray(0, 16).toString('hex'))
-    // 使用 Buffer.from 强制以 Binary Frame 发送
-    ws.send(frame)
+    const arr = Uint8Array.from(session.encode(bytes))
+    console.log('[debug] send len', arr.length, 'first16', toHex(arr.subarray(0, 16)))
+    ws.send(arr.buffer) // send ArrayBuffer for binary frame
   }
 
   // 自动封装 onmessage，若业务方提供了回调
@@ -255,9 +254,9 @@ export async function connectBitSealWS (
       try {
         let raw: Uint8Array
         if (typeof ev.data === 'string') {
-          raw = Buffer.from(ev.data, 'utf8')
+          raw = new TextEncoder().encode(ev.data as string)
         } else if (ev.data instanceof ArrayBuffer || ArrayBuffer.isView(ev.data)) {
-          raw = new Uint8Array(ev.data as ArrayBuffer | ArrayBufferView)
+          raw = ev.data instanceof Uint8Array ? ev.data : new Uint8Array(ev.data as ArrayBuffer)
         } else if (globalThis.Blob && ev.data instanceof Blob) {
           // Node-undici 在 binaryType=undefined 时默认返回 Blob
           const ab = await ev.data.arrayBuffer()
@@ -267,7 +266,7 @@ export async function connectBitSealWS (
           return
         }
 
-        console.log('[debug] recv typeof', typeof ev.data, 'len', raw.length, 'first16', Buffer.from(raw).subarray(0, 16).toString('hex'))
+        console.log('[debug] recv typeof', typeof ev.data, 'len', raw.length, 'first16', toHex(raw.subarray(0, 16)))
 
         const plain = session.decode(raw)
         const resp = await opts.onMessage!(plain, session, ws, serverPub, clientPriv)

@@ -5,13 +5,13 @@ import { sha256 } from '@bsv/sdk/primitives/Hash'
 import { toHex, toArray, toUTF8 } from '@bsv/sdk/primitives/utils'
 import { sign as brc77Sign, verify as brc77Verify } from '@bsv/sdk/messages/SignedMessage'
 import { AESGCM, AESGCMDecrypt } from '@bsv/sdk/primitives/AESGCM'
-import { randomBytes } from 'crypto'
+import Random from '@bsv/sdk/primitives/Random'
 
 const PROTO = 'BitSeal-RTC/1.0'
 const TAG_SIZE = 16
 
 export const buildHandshake = (selfPriv, peerPub) => {
-  const salt = Array.from(randomBytes(4))
+  const salt = Random(4)
   const ts = Date.now()
   const pkHex = selfPriv.toPublicKey().encode(true, 'hex')
   const saltHex = toHex(salt)
@@ -60,12 +60,10 @@ export class Session {
 
   static create (selfPriv, peerPub, saltSelf, saltPeer) {
     const shared = selfPriv.deriveSharedSecret(peerPub).encode(true)
-    console.log('[derive] saltA', Buffer.from(saltSelf).toString('hex'),
-                'saltB', Buffer.from(saltPeer).toString('hex'),
-                'shared', Buffer.from(shared).subarray(0, 16).toString('hex'))
+    console.log('[derive] saltA', toHex(saltSelf), 'saltB', toHex(saltPeer), 'shared', toHex(shared.slice(0, 16)))
     const key = deriveKey(shared, saltSelf, saltPeer)
-    console.log('[derive] key', Buffer.from(key).subarray(0, 16).toString('hex'))
-    const rand = randomBytes(8)
+    console.log('[derive] key', toHex(key.slice(0, 16)))
+    const rand = Random(8)
     let init = 0n
     for (const b of rand) init = (init << 8n) + BigInt(b)
     const sess = new Session(key, saltSelf, saltPeer, peerPub)
@@ -95,9 +93,7 @@ export class Session {
     const seqBytes = frame.slice(5, 13)
     const nonce = [...this.saltRecv, ...seqBytes]
     const ad = [flags, ...seqBytes]
-    // DEBUG
-    console.log('[rtc.decode] saltRecv', Buffer.from(this.saltRecv).toString('hex'), 'seq', Buffer.from(seqBytes).toString('hex'))
-    console.log('[rtc.decode] ad', Buffer.from(ad).toString('hex'))
+    console.log('[rtc.decode] saltRecv', toHex(this.saltRecv), 'seq', toHex(seqBytes), 'ad', toHex(ad))
     let plain
     if (AESGCMDecrypt.length === 4) {
       // library expects cipher||tag combined (array)

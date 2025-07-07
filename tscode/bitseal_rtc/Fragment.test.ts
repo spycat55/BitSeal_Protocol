@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 // @ts-nocheck
 import { Fragmenter, Reassembler } from './Fragment.js'
 import PrivateKey from '@bsv/sdk/primitives/PrivateKey'
@@ -20,7 +21,7 @@ describe('fragment', () => {
     const saltB = [5,6,7,8]
 
     const sessA = Session.create(self, peer.toPublicKey(), saltA, saltB)
-    const sessB = Session.create(peer, self.toPublicKey(), saltA, saltB)
+    const sessB = Session.create(peer, self.toPublicKey(), saltB, saltA)
 
     const fragA = new Fragmenter(sessA)
     const recvB = new Reassembler(sessB)

@@ -1,0 +1,22 @@
+{
+  "name": "bitseal-playwright-demo",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Playwright E2E tests for BitSeal-WS Go demo server",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.43.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0",
+    "esbuild": "^0.20.0"
+  },
+  "dependencies": {
+    "@bsv/sdk": "^1.0.0",
+    "isomorphic-ws": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+} 

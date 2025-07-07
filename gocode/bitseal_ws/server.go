@@ -94,10 +94,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // --- Step-1: HTTPS POST /ws/handshake ---
 func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
+	// --- CORS Preflight ---
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-BKSA-Protocol, X-BKSA-Sig, X-BKSA-Timestamp, X-BKSA-Nonce")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Allow browser cross-origin POST
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -173,6 +186,8 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	for k, v := range respHeaders {
 		w.Header().Set(k, v)
 	}
+	// 允许浏览器脚本访问签名头
+	w.Header().Set("Access-Control-Expose-Headers", "X-BKSA-Protocol, X-BKSA-Sig, X-BKSA-Timestamp, X-BKSA-Nonce")
 	w.Header().Set("Content-Type", "application/json")
 
 	// Remember state keyed by nonce for later Upgrade validation

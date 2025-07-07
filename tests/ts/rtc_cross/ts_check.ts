@@ -24,7 +24,7 @@ const saltB = [5, 6, 7, 8]
 const self = key(2) // B side
 const peer = key(1)
 
-const sess = Session.create(self, peer.toPublicKey(), saltA, saltB)
+const sess = Session.create(self, peer.toPublicKey(), saltB, saltA)
 const recv = new Reassembler(sess)
 
 // --- inject network disorder & duplicates ---

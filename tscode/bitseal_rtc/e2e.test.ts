@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 // @ts-nocheck
 import { Fragmenter, Reassembler } from './Fragment'
 import { Session } from './BitSealRTC.js'
@@ -19,7 +20,7 @@ describe('BitSeal-RTC e2e', () => {
     const saltB = [5,6,7,8]
 
     const sessA = Session.create(alice, bob.toPublicKey(), saltA, saltB)
-    const sessB = Session.create(bob, alice.toPublicKey(), saltA, saltB)
+    const sessB = Session.create(bob, alice.toPublicKey(), saltB, saltA)
 
     const fragA = new Fragmenter(sessA)
     const recvB = new Reassembler(sessB)

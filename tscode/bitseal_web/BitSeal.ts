@@ -7,7 +7,7 @@ import PrivateKey from '@bsv/sdk/primitives/PrivateKey'
 import PublicKey from '@bsv/sdk/primitives/PublicKey'
 
 import { sign as brc77Sign, verify as brc77Verify } from '@bsv/sdk/messages/SignedMessage'
-import { randomBytes } from 'crypto'
+import Random from '@bsv/sdk/primitives/Random'
 
 export interface BitSealHeaders {
   'X-BKSA-Protocol': 'BitSeal'
@@ -17,7 +17,7 @@ export interface BitSealHeaders {
   [k: string]: string
 }
 
-export const randomNonce = (): string => randomBytes(16).toString('hex')
+export const randomNonce = (): string => toHex(Random(16))
 
 export function canonicalQueryString (query: string = ''): string {
   if (!query) return ''
