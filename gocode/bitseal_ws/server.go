@@ -74,15 +74,27 @@ func (s *Server) SendTo(peerPub *ec.PublicKey, plain []byte) error {
 	key := fmt.Sprintf("%x", peerPub.Compressed())
 	s.mu.Lock()
 	cc, ok := s.clients[key]
+	total := len(s.clients)
 	s.mu.Unlock()
+
 	if !ok {
+		log.Printf("[SendTo] peer %s NOT connected (total %d clients)", key, total)
 		return fmt.Errorf("peer not connected")
 	}
+
 	frame, err := cc.sess.EncodeRecord(plain, 0)
 	if err != nil {
+		log.Printf("[SendTo] encode error: %v", err)
 		return err
 	}
-	return websocket.Message.Send(cc.ws, frame)
+
+	log.Printf("[SendTo] -> %s plainLen=%d frameLen=%d", key, len(plain), len(frame))
+
+	if err := websocket.Message.Send(cc.ws, frame); err != nil {
+		log.Printf("[SendTo] send error: %v", err)
+		return err
+	}
+	return nil
 }
 
 // NewServer creates a new BitSeal-WS server with its own ServeMux.

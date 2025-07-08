@@ -15,13 +15,13 @@ function fixedPriv(b: number): PrivateKey {
   console.log('script start')
 
   try {
-    const { ws, send, session, extra } = await connectBitSealWS(clientPriv, serverPub, 'ws://localhost:8080/ws/socket', {
+    const { ws, send, session, extra, jwtPayload, clientSaltHex, token } = await connectBitSealWS(clientPriv, serverPub, 'ws://localhost:8080/ws/socket', {
       WebSocketImpl: WebSocket as unknown as any,
-      onSession: (sess, _ws, peerPub) => {
+      onSession: (sess, _ws, peerPub, _selfPriv) => {
         console.log('[onSession] peerPub(hex)=', peerPub.encode(true, 'hex'))
         console.log('[onSession] sess.peerPub() ==', sess.peerPub().encode(true, 'hex'))
       },
-      onMessage: (plain: Uint8Array, _sess, _ws: WebSocketLike) => {
+      onMessage: (plain: Uint8Array, _sess, _ws: WebSocketLike, _peerPub, _selfPriv) => {
         console.log('got reply:', new TextDecoder().decode(plain))
         _ws.close()
         resolveDone()
@@ -30,6 +30,9 @@ function fixedPriv(b: number): PrivateKey {
     })
 
     console.log('connected, extra fields =', extra)
+    console.log('jwtPayload', jwtPayload)
+    console.log('clientSaltHex', clientSaltHex)
+    console.log('token', token)
     console.log('ws.readyState =', (ws as any).readyState, 'sending hello via send()')
 
     ;(ws as any).onopen = () => console.log('[debug] ws onopen')
