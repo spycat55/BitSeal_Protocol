@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"bytes"
@@ -16,6 +15,7 @@ import (
 	aesgcm "github.com/bsv-blockchain/go-sdk/primitives/aesgcm"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	crypto "github.com/bsv-blockchain/go-sdk/primitives/hash"
+	"go.uber.org/zap"
 )
 
 // Constants
@@ -116,17 +116,21 @@ func deriveKey(shared, saltA, saltB []byte) []byte {
 }
 
 // NewSession creates session after both handshakes exchanged.
-func NewSession(selfPriv *ec.PrivateKey, peerPub *ec.PublicKey, selfSalt, peerSalt []byte) (*Session, error) {
+// If logger is nil, the function stays silent.
+func NewSession(selfPriv *ec.PrivateKey, peerPub *ec.PublicKey, selfSalt, peerSalt []byte, logger *zap.Logger) (*Session, error) {
 	sharedPoint, err := selfPriv.DeriveSharedSecret(peerPub)
 	if err != nil {
 		return nil, err
 	}
 	sharedBytes := sharedPoint.Compressed()
-	// DEBUG: 打印派生输入
-	log.Printf("[derive] saltA=%x saltB=%x shared=%x", selfSalt, peerSalt, sharedBytes[:16])
+	// DEBUG: 可选日志
+	if logger != nil {
+		logger.Debug("derive input", zap.String("saltA", fmt.Sprintf("%x", selfSalt)), zap.String("saltB", fmt.Sprintf("%x", peerSalt)), zap.String("shared_first16", fmt.Sprintf("%x", sharedBytes[:16])))
+	}
 	key := deriveKey(sharedBytes, selfSalt, peerSalt)
-	// DEBUG: 打印派生输出
-	log.Printf("[derive] key=%x", key[:16])
+	if logger != nil {
+		logger.Debug("derive output", zap.String("key_first16", fmt.Sprintf("%x", key[:16])))
+	}
 
 	// no need to init AESGCM cipher here
 

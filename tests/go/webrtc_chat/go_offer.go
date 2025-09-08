@@ -47,7 +47,7 @@ func main() {
 	peer := key(2)
 	saltA := []byte{1, 2, 3, 4}
 	saltB := []byte{5, 6, 7, 8}
-	sess, _ := rtc.NewSession(self, peer.PubKey(), saltA, saltB)
+	sess, _ := rtc.NewSession(self, peer.PubKey(), saltA, saltB, nil)
 	recv := rtc.NewReassembler(sess)
 
 	dc.OnOpen(func() {

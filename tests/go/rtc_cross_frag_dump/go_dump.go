@@ -34,7 +34,7 @@ func main() {
 	saltA := []byte{1, 2, 3, 4}
 	saltB := []byte{5, 6, 7, 8}
 
-	sess, err := rtc.NewSession(self, peer.PubKey(), saltA, saltB)
+	sess, err := rtc.NewSession(self, peer.PubKey(), saltA, saltB, nil)
 	if err != nil {
 		panic(err)
 	}

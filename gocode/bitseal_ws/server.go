@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"go.uber.org/zap"
 )
 
 // handshakeState keeps temporary info between POST /ws/handshake and subsequent GET /ws/socket.
@@ -38,6 +38,9 @@ type Server struct {
 
 	// 保存已建立连接的客户端：压缩公钥 hex -> (session, websocket.Conn)
 	clients map[string]*clientConn
+
+	// 可选外部注入的 logger；若为 nil，则完全静默
+	logger *zap.Logger
 
 	// OnMessage 为业务回调；若不为 nil，则在收到每条消息后调用以生成响应明文。
 	// 回调返回的明文会再次加密后发回客户端；若返回 nil 则表示不需要回复。
@@ -78,32 +81,42 @@ func (s *Server) SendTo(peerPub *ec.PublicKey, plain []byte) error {
 	s.mu.Unlock()
 
 	if !ok {
-		log.Printf("[SendTo] peer %s NOT connected (total %d clients)", key, total)
+		if s.logger != nil {
+			s.logger.Warn("SendTo peer not connected", zap.String("peer", key), zap.Int("total_clients", total))
+		}
 		return fmt.Errorf("peer not connected")
 	}
 
 	frame, err := cc.sess.EncodeRecord(plain, 0)
 	if err != nil {
-		log.Printf("[SendTo] encode error: %v", err)
+		if s.logger != nil {
+			s.logger.Error("SendTo encode error", zap.Error(err))
+		}
 		return err
 	}
 
-	log.Printf("[SendTo] -> %s plainLen=%d frameLen=%d", key, len(plain), len(frame))
+	if s.logger != nil {
+		s.logger.Debug("SendTo", zap.String("peer", key), zap.Int("plain_len", len(plain)), zap.Int("frame_len", len(frame)))
+	}
 
 	if err := websocket.Message.Send(cc.ws, frame); err != nil {
-		log.Printf("[SendTo] send error: %v", err)
+		if s.logger != nil {
+			s.logger.Error("SendTo send error", zap.Error(err))
+		}
 		return err
 	}
 	return nil
 }
 
 // NewServer creates a new BitSeal-WS server with its own ServeMux.
-func NewServer(priv *ec.PrivateKey) *Server {
+// If logger is nil, the server remains silent.
+func NewServer(priv *ec.PrivateKey, logger *zap.Logger) *Server {
 	srv := &Server{
 		priv:    priv,
 		pub:     priv.PubKey(),
 		mux:     http.NewServeMux(),
 		pending: make(map[string]*handshakeState),
+		logger:  logger,
 	}
 	srv.routes()
 	return srv
@@ -168,11 +181,15 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// debug log for incoming handshake
-	log.Printf("[BitSeal-WS] handshake POST from %s", r.RemoteAddr)
+	if s.logger != nil {
+		s.logger.Debug("handshake POST", zap.String("remote", r.RemoteAddr))
+	}
 
 	clientPub, saltC, nonce, err := VerifyHandshakeRequest(bodyStr, r.Method, r.URL.Path, hdr, s.priv)
 	if err != nil {
-		log.Printf("[BitSeal-WS] handshake verify failed: %v", err)
+		if s.logger != nil {
+			s.logger.Warn("handshake verify failed", zap.Error(err))
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("verify failed"))
 		return
@@ -180,7 +197,9 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 
 	// Generate 4-byte server salt
 	saltS, _ := randomSalt4()
-	log.Printf("[handshake] serverSalt %s", saltS)
+	if s.logger != nil {
+		s.logger.Debug("serverSalt", zap.String("salt_s", saltS))
+	}
 
 	// Build JWT
 	claims := map[string]any{
@@ -190,7 +209,9 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	}
 	token, err := CreateToken(claims, s.priv, 60)
 	if err != nil {
-		log.Printf("[BitSeal-WS] create token error: %v", err)
+		if s.logger != nil {
+			s.logger.Error("create token error", zap.Error(err))
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -238,7 +259,9 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 
 	_, _ = w.Write(respBody)
 
-	log.Printf("[BitSeal-WS] handshake success nonce=%s client=%x", nonce, clientPub.Compressed())
+	if s.logger != nil {
+		s.logger.Info("handshake success", zap.String("nonce", nonce), zap.String("client", fmt.Sprintf("%x", clientPub.Compressed())))
+	}
 }
 
 // --- Step-2: WebSocket Upgrade /ws/socket ---
@@ -259,11 +282,15 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 	token := strings.TrimSpace(protos[1])
 
 	// debug log for incoming websocket upgrade
-	log.Printf("[BitSeal-WS] websocket upgrade from %s", req.RemoteAddr)
+	if s.logger != nil {
+		s.logger.Debug("websocket upgrade", zap.String("remote", req.RemoteAddr))
+	}
 
 	claims, err := VerifyToken(token, s.pub)
 	if err != nil {
-		log.Printf("[BitSeal-WS] token verify failed: %v", err)
+		if s.logger != nil {
+			s.logger.Warn("token verify failed", zap.Error(err))
+		}
 		_ = ws.Close()
 		return
 	}
@@ -282,20 +309,26 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 	}
 	s.mu.Unlock()
 	if !ok {
-		log.Printf("[BitSeal-WS] nonce %s not found in pending map", nonceVal)
+		if s.logger != nil {
+			s.logger.Warn("nonce not found in pending map", zap.String("nonce", nonceVal))
+		}
 		_ = ws.Close()
 		return
 	}
 
 	// Build BST2 session
-	sess, err := rtc.NewSession(s.priv, state.clientPub, bytesFromHex(state.serverSalt), bytesFromHex(state.clientSalt))
+	sess, err := rtc.NewSession(s.priv, state.clientPub, bytesFromHex(state.serverSalt), bytesFromHex(state.clientSalt), s.logger)
 	if err != nil {
-		log.Printf("[BitSeal-WS] session creation failed: %v", err)
+		if s.logger != nil {
+			s.logger.Error("session creation failed", zap.Error(err))
+		}
 		_ = ws.Close()
 		return
 	}
 
-	log.Printf("[BitSeal-WS] session established with client %x", state.clientPub.Compressed())
+	if s.logger != nil {
+		s.logger.Info("session established", zap.String("client", fmt.Sprintf("%x", state.clientPub.Compressed())))
+	}
 
 	// 将连接保存至 clients map
 	peerHex := fmt.Sprintf("%x", state.clientPub.Compressed())
@@ -324,17 +357,23 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 		frame := buf[:n]
 		plain, err := sess.DecodeRecord(frame)
 		if err != nil {
-			log.Printf("[BitSeal-WS] decode error: %v", err)
+			if s.logger != nil {
+				s.logger.Warn("decode error", zap.Error(err))
+			}
 			continue // skip invalid
 		}
-		log.Printf("[BitSeal-WS] recv: %d bytes plain=%q", len(plain), string(plain))
+		if s.logger != nil {
+			s.logger.Debug("recv", zap.Int("len", len(plain)), zap.String("plain", string(plain)))
+		}
 
 		// 根据是否设置了业务回调决定如何处理消息。
 		var respPlain []byte
 		if s.OnMessage != nil {
 			resp, err := s.OnMessage(sess, plain)
 			if err != nil {
-				log.Printf("[BitSeal-WS] OnMessage error: %v", err)
+				if s.logger != nil {
+					s.logger.Warn("OnMessage error", zap.Error(err))
+				}
 				continue // 跳过本条消息
 			}
 			respPlain = resp
@@ -345,7 +384,14 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 
 		if respPlain != nil {
 			outFrame, _ := sess.EncodeRecord(respPlain, 0)
-			log.Printf("[debug] send len=%d first16=%x", len(outFrame), outFrame[:16])
+			if s.logger != nil {
+				// 注意：切片边界保护
+				first := 16
+				if len(outFrame) < first {
+					first = len(outFrame)
+				}
+				s.logger.Debug("send frame", zap.Int("len", len(outFrame)), zap.String("first_hex", fmt.Sprintf("%x", outFrame[:first])))
+			}
 			_ = websocket.Message.Send(ws, outFrame)
 		}
 	}
@@ -355,7 +401,9 @@ func (s *Server) handleSocket(ws *websocket.Conn) {
 	delete(s.clients, peerHex)
 	s.mu.Unlock()
 
-	log.Printf("[BitSeal-WS] connection closed")
+	if s.logger != nil {
+		s.logger.Info("connection closed")
+	}
 }
 
 // Helper: 4-byte random salt hex

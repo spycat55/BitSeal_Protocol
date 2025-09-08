@@ -19,7 +19,7 @@ func fixedPriv(val byte) *ec.PrivateKey {
 
 func main() {
 	serverPriv := fixedPriv(0x55)
-	srv := ws.NewServer(serverPriv)
+	srv := ws.NewServer(serverPriv, nil)
 
 	// 测试新版 OnMessage：收到消息后添加前缀回复
 	srv.OnMessage = func(sess *rtc.Session, plain []byte) ([]byte, error) {

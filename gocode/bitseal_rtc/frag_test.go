@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestFragmentRoundtrip(t *testing.T) {
@@ -21,11 +22,12 @@ func TestFragmentRoundtrip(t *testing.T) {
 	saltA := []byte{1, 2, 3, 4}
 	saltB := []byte{5, 6, 7, 8}
 
-	sessA, err := NewSession(privA, privB.PubKey(), saltA, saltB)
+	logger := zaptest.NewLogger(t)
+	sessA, err := NewSession(privA, privB.PubKey(), saltA, saltB, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessB, err := NewSession(privB, privA.PubKey(), saltB, saltA)
+	sessB, err := NewSession(privB, privA.PubKey(), saltB, saltA, logger)
 	if err != nil {
 		t.Fatal(err)
 	}

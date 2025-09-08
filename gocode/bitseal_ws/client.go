@@ -211,7 +211,7 @@ func ConnectBitSealWS(clientPriv *ec.PrivateKey, serverPub *ec.PublicKey, wsURL 
 	// ---------- 建立 BST2 会话 ----------
 	saltCBytes, _ := hex.DecodeString(saltC)
 	saltSBytes, _ := hex.DecodeString(saltSVal)
-	sess, err := rtc.NewSession(clientPriv, serverPub, saltCBytes, saltSBytes)
+	sess, err := rtc.NewSession(clientPriv, serverPub, saltCBytes, saltSBytes, nil)
 	if err != nil {
 		wsConn.Close()
 		return nil, err

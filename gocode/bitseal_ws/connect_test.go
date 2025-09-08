@@ -8,6 +8,7 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	ws "github.com/spycat55/BitSeal_Protocol/gocode/bitseal_ws"
+	"go.uber.org/zap/zaptest"
 )
 
 func fixedPriv(b byte) *ec.PrivateKey {
@@ -20,7 +21,8 @@ func fixedPriv(b byte) *ec.PrivateKey {
 // TestConnectBitSealWS verifies that ConnectBitSealWS completes the two-step handshake and BST2 session.
 func TestConnectBitSealWS(t *testing.T) {
 	serverPriv := fixedPriv(0x55)
-	server := ws.NewServer(serverPriv)
+	logger := zaptest.NewLogger(t)
+	server := ws.NewServer(serverPriv, logger)
 	ts := httptest.NewServer(server)
 	defer ts.Close()
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"go.uber.org/zap/zaptest"
 )
 
 func mustPriv(seed byte) *ec.PrivateKey {
@@ -26,8 +27,9 @@ func TestOutOfOrderDuplicate(t *testing.T) {
 	saltA := []byte{1, 2, 3, 4}
 	saltB := []byte{5, 6, 7, 8}
 
-	sessA, _ := NewSession(privA, privB.PubKey(), saltA, saltB)
-	sessB, _ := NewSession(privB, privA.PubKey(), saltB, saltA)
+	logger := zaptest.NewLogger(t)
+	sessA, _ := NewSession(privA, privB.PubKey(), saltA, saltB, logger)
+	sessB, _ := NewSession(privB, privA.PubKey(), saltB, saltA, logger)
 
 	fragA := NewFragmenter(sessA)
 	recvB := NewReassembler(sessB)
@@ -70,7 +72,8 @@ func TestOutOfOrderDuplicate(t *testing.T) {
 func TestReplayWindowBoundary(t *testing.T) {
 	priv := mustPriv(0x03)
 	salt := []byte{1, 1, 1, 1}
-	sess, _ := NewSession(priv, priv.PubKey(), salt, salt)
+	logger := zaptest.NewLogger(t)
+	sess, _ := NewSession(priv, priv.PubKey(), salt, salt, logger)
 
 	// send first 70 sequences (window size 64)
 	for i := 0; i < 70; i++ {

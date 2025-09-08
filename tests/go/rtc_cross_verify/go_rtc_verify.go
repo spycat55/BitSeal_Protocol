@@ -52,9 +52,9 @@ func main() {
 	if !peerPubFromMsg.IsEqual(peerPub) {
 		panic("peer pub mismatch")
 	}
-	_, err = rtc.NewSession(self, peerPub, saltPeer, salt)
+	_, err = rtc.NewSession(self, peerPub, saltPeer, salt, nil)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Go verification OK ✅")
+	fmt.Println("Go verification OK ")
 }
